@@ -41,6 +41,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 SDL2::SDL2main)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/thirdparty/wasm3/source ${CMAKE_BINARY_DIR}/m3)
 target_link_libraries(${PROJECT_NAME} PRIVATE m3)
 
+add_custom_target(copy_wasm ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_LIST_DIR}/thirdparty/wasm3/platforms/cpp/wasm
+    ${CMAKE_BINARY_DIR}/wasm
+)
+add_dependencies(${PROJECT_NAME} copy_wasm)
+
 # msvc
 if (MSVC)
   set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
