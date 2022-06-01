@@ -22,6 +22,8 @@ constexpr Uint32 fps = 60;
 constexpr Uint32 ms_frame = (1000U / fps);
 constexpr uint32_t memory_size = (1024 * 64);
 
+SDL_Renderer *renderer = nullptr;
+
 auto inline print_sdl_error() {
 	return SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", SDL_GetError());
 }
@@ -49,6 +51,25 @@ m3ApiRawFunction(wasm_ext_memcpy) {
 	m3ApiReturn(ext_memcpy(dst, arg, size));
 }
 
+m3ApiRawFunction(wasm_draw_color) {
+	m3ApiReturnType(int);
+	m3ApiGetArg(unsigned int, r);
+	m3ApiGetArg(unsigned int, g);
+	m3ApiGetArg(unsigned int, b);
+	m3ApiGetArg(unsigned int, a);
+	m3ApiReturn(SDL_SetRenderDrawColor(renderer, r, g, b, a));
+}
+
+m3ApiRawFunction(wasm_draw_rect) {
+	m3ApiReturnType(int);
+	m3ApiGetArg(int, x);
+	m3ApiGetArg(int, y);
+	m3ApiGetArg(int, w);
+	m3ApiGetArg(int, h);
+	SDL_Rect rect{ x, y, w, h };
+	m3ApiReturn(SDL_RenderFillRect(renderer, &rect));
+}
+
 IM3Environment environment = nullptr;
 IM3Runtime runtime = nullptr;
 IM3Module module = nullptr;
@@ -58,6 +79,7 @@ IM3Function test_memcpy = nullptr;
 IM3Function test_counter_get = nullptr;
 IM3Function test_counter_inc = nullptr;
 IM3Function test_counter_add = nullptr;
+IM3Function update = nullptr;
 
 void finalize_m3() {
 	test_counter_get = nullptr;
@@ -107,13 +129,23 @@ bool setup_wasm(const char *file_path) {
 		if (!initialize_m3(buffer.data(), buffer.size())) {
 
 		} else {
+
 			m3_LinkRawFunction(module, "*", "sum", "i(ii)", wasm_sum);
 			m3_LinkRawFunction(module, "*", "ext_memcpy", "*(**i)", wasm_ext_memcpy);
+			m3_LinkRawFunction(module, "*", "draw_color", "i(iiii)", wasm_draw_color);
+			m3_LinkRawFunction(module, "*", "draw_rect", "i(iiii)", wasm_draw_rect);
 			m3_FindFunction(&test, runtime, "test");
 			m3_FindFunction(&test_memcpy, runtime, "test_memcpy");
 			m3_FindFunction(&test_counter_get, runtime, "test_counter_get");
 			m3_FindFunction(&test_counter_inc, runtime, "test_counter_inc");
 			m3_FindFunction(&test_counter_add, runtime, "test_counter_add");
+			m3_FindFunction(&update, runtime, "update");
+
+			M3ErrorInfo error;
+			m3_GetErrorInfo(runtime, &error);
+			if (error.result) {
+				SDL_Log("Error in load: %s: %s\n", error.result, error.message);
+			}
 
 			{
 				m3_CallV(test, 20, 10);
@@ -161,7 +193,7 @@ bool setup_wasm(const char *file_path) {
 } // namespace
 
 int main(int argc, char **argv) {
-	if (!setup_wasm("wasm/test_prog.wasm")) {
+	if (!setup_wasm("test_prog.wasm")) {
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "wasm3 error");
 
 	} else if (auto init = SDL_Init(SDL_INIT_EVERYTHING); init < 0) {
@@ -176,7 +208,7 @@ int main(int argc, char **argv) {
 		print_sdl_error();
 		SDL_Quit();
 
-	} else if (auto *renderer = SDL_CreateRenderer(
+	} else if (renderer = SDL_CreateRenderer(
 		window, -1, (SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED)
 	); renderer == nullptr) {
 		print_sdl_error();
@@ -210,6 +242,12 @@ int main(int argc, char **argv) {
 			SDL_Rect rect{ 0, 0, logical_width, logical_height };
 			SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
 			SDL_RenderFillRect(renderer, &rect);
+
+			if (update) {
+				m3_CallV(update);
+				int result = 0;
+				m3_GetResultsV(test, &result);
+			}
 
 			SDL_RenderPresent(renderer);
 
