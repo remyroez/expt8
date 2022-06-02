@@ -16,7 +16,7 @@
 namespace {
 
 constexpr int logical_width = 256;
-constexpr int logical_height = 244;
+constexpr int logical_height = 240;
 constexpr int default_scale = 2;
 constexpr int default_width = (logical_width * default_scale);
 constexpr int default_height = (logical_height * default_scale);
@@ -58,8 +58,7 @@ m3ApiRawFunction(wasm_draw_color) {
 	m3ApiGetArg(unsigned int, r);
 	m3ApiGetArg(unsigned int, g);
 	m3ApiGetArg(unsigned int, b);
-	m3ApiGetArg(unsigned int, a);
-	m3ApiReturn(SDL_SetRenderDrawColor(renderer, r, g, b, a));
+	m3ApiReturn(SDL_SetRenderDrawColor(renderer, r, g, b, 0xFF));
 }
 
 m3ApiRawFunction(wasm_draw_rect) {
@@ -71,6 +70,8 @@ m3ApiRawFunction(wasm_draw_rect) {
 	SDL_Rect rect{ x, y, w, h };
 	m3ApiReturn(SDL_RenderFillRect(renderer, &rect));
 }
+
+std::filesystem::path current_wasm;
 
 IM3Environment environment = nullptr;
 IM3Runtime runtime = nullptr;
@@ -137,10 +138,11 @@ bool setup_wasm(const std::filesystem::path &file_path) {
 		if (!initialize_m3(buffer.data(), buffer.size())) {
 
 		} else {
+			current_wasm = file_path;
 
 			m3_LinkRawFunction(module, "*", "sum", "i(ii)", wasm_sum);
 			m3_LinkRawFunction(module, "*", "ext_memcpy", "*(**i)", wasm_ext_memcpy);
-			m3_LinkRawFunction(module, "*", "draw_color", "i(iiii)", wasm_draw_color);
+			m3_LinkRawFunction(module, "*", "draw_color", "i(iii)", wasm_draw_color);
 			m3_LinkRawFunction(module, "*", "draw_rect", "i(iiii)", wasm_draw_rect);
 			m3_FindFunction(&test, runtime, "test");
 			m3_FindFunction(&test_memcpy, runtime, "test_memcpy");
@@ -237,10 +239,17 @@ int main(int argc, char **argv) {
 		SDL_RenderSetLogicalSize(renderer, logical_width, logical_height);
 		SDL_RenderSetIntegerScale(renderer, SDL_TRUE);
 
+		std::vector<Uint8> KeyboardState;
+		{
+			int Num = 0;
+			SDL_GetKeyboardState(&Num);
+			KeyboardState.resize(Num);
+		}
+
 		bool running = true;
 		while (running) {
 			auto initial_ms = SDL_GetTicks();
-
+			bool press = false;
 			SDL_Event event{};
 			while (SDL_PollEvent(&event) != 0) {
 				if (event.type == SDL_QUIT) {
@@ -250,15 +259,29 @@ int main(int argc, char **argv) {
 					if ((event.window.type == SDL_WINDOWEVENT_CLOSE) && (event.window.windowID == SDL_GetWindowID(window))) {
 						running = false;
 					}
+
+				} else if (event.type == SDL_KEYDOWN) {
+					if ((event.key.state == SDL_PRESSED) && (event.key.windowID == SDL_GetWindowID(window)) && (event.key.repeat == 0)) {
+						press = true;
+					}
 				}
 			}
 
-			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+			auto *CurrentKeyboardState = SDL_GetKeyboardState(nullptr);
+
+			// reload wasm
+			if (!KeyboardState[SDL_SCANCODE_F5] && CurrentKeyboardState[SDL_SCANCODE_F5]) {
+				setup_wasm(current_wasm);
+			}
+
+			SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0);
 			SDL_RenderClear(renderer);
 
-			SDL_Rect rect{ 0, 0, logical_width, logical_height };
-			SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-			SDL_RenderFillRect(renderer, &rect);
+			{
+				SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+				SDL_Rect rect{ 0, 0, logical_width, logical_height };
+				SDL_RenderFillRect(renderer, &rect);
+			}
 
 			if (update) {
 				m3_CallV(update);
@@ -267,6 +290,8 @@ int main(int argc, char **argv) {
 			}
 
 			SDL_RenderPresent(renderer);
+
+			std::copy(CurrentKeyboardState, &CurrentKeyboardState[SDL_NUM_SCANCODES], KeyboardState.begin());
 
 			auto elapsed_ms = (SDL_GetTicks() - initial_ms);
 			if (elapsed_ms < ms_frame) SDL_Delay(ms_frame - elapsed_ms);
