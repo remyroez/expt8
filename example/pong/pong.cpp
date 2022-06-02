@@ -25,6 +25,39 @@ int y_speed = 5;
 int x = (screen_width - ball_width) / 2;
 int y = (screen_height - ball_height) / 2;
 
+struct rect {
+    int x{ 0 };
+    int y{ 0 };
+    int w{ 0 };
+    int h{ 0 };
+
+    inline int left() const { return x; }
+    inline int right() const { return x + w; }
+    inline int top() const { return y; }
+    inline int bottom() const { return y + h; }
+};
+
+rect ball{
+    (screen_width - ball_width) / 2,
+    (screen_height - ball_height) / 2,
+    ball_width,
+    ball_height
+};
+
+rect player_a{
+    10,
+    0,
+    10,
+    100
+};
+
+bool is_hit(const rect &a, const rect &b) {
+    return (a.left() < b.right())
+        && (a.top() < b.bottom())
+        && (a.right() > b.left())
+        && (a.bottom() > b.top());
+}
+
 } // namespace
 
 // start
@@ -36,27 +69,33 @@ void WASM_EXPORT start()
 // update
 int WASM_EXPORT update()
 {
-    x += x_speed;
-    y += y_speed;
-    if (x < 0) {
-        x = 0;
+    ball.x += x_speed;
+    ball.y += y_speed;
+    if (ball.x < 0) {
+        ball.x = 0;
         x_speed *= -1;
 
-    } else if (x > screen_width) {
-        x = screen_width;
+    } else if (ball.x > screen_width) {
+        ball.x = screen_width;
         x_speed *= -1;
     }
-    if (y < 0) {
-        y = 0;
+    if (ball.y < 0) {
+        ball.y = 0;
         y_speed *= -1;
 
-    } else if (y > screen_height) {
-        y = screen_height;
+    } else if (ball.y > screen_height) {
+        ball.y = screen_height;
         y_speed *= -1;
     }
 
     draw_color(0xFF, 0xFF, 0xFF);
-    draw_rect(x, y, ball_width, ball_height);
+    draw_rect(ball.x, ball.y, ball.w, ball.h);
+
+    if ((x_speed < 0) && is_hit(ball, player_a)) {
+        draw_color(0xFF, 0, 0);
+        x_speed *= -1;
+    }
+    draw_rect(player_a.x, player_a.y, player_a.w, player_a.h);
     return 0;
 }
 
