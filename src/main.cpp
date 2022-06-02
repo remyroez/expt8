@@ -5,6 +5,8 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <string_view>
+#include <filesystem>
 
 #include <SDL.h>
 
@@ -82,10 +84,15 @@ IM3Function test_counter_add = nullptr;
 IM3Function update = nullptr;
 
 void finalize_m3() {
+	test = nullptr;
+	test_memcpy = nullptr;
 	test_counter_get = nullptr;
 	test_counter_inc = nullptr;
 	test_counter_add = nullptr;
-	module = nullptr;
+	update = nullptr;
+	{
+		module = nullptr;
+	}
 	if (runtime) {
 		m3_FreeRuntime(runtime);
 		runtime = nullptr;
@@ -98,6 +105,7 @@ void finalize_m3() {
 
 bool initialize_m3(const uint8_t *const file_data, uint32_t file_size) {
 	bool succeeded = false;
+	finalize_m3();
 	if (environment = m3_NewEnvironment(); environment == nullptr) {
 
 	} else if (runtime = m3_NewRuntime(environment, memory_size, nullptr); runtime == nullptr) {
@@ -113,7 +121,7 @@ bool initialize_m3(const uint8_t *const file_data, uint32_t file_size) {
 	return succeeded;
 }
 
-bool setup_wasm(const char *file_path) {
+bool setup_wasm(const std::filesystem::path &file_path) {
 	bool succeeded = false;
 
 	if (std::ifstream file(file_path, std::ios::binary | std::ios::in); !file.is_open()) {
@@ -147,28 +155,28 @@ bool setup_wasm(const char *file_path) {
 				SDL_Log("Error in load: %s: %s\n", error.result, error.message);
 			}
 
-			{
+			if (test) {
 				m3_CallV(test, 20, 10);
 				int result = 0;
 				m3_GetResultsV(test, &result);
 				SDL_Log("test -> %d", result);
 			}
 
-			{
+			if (test_memcpy) {
 				m3_CallV(test_memcpy);
 				int64_t result = 0;
 				m3_GetResultsV(test_memcpy, &result);
 				SDL_Log("test_memcpy -> %llx", result);
 			}
 
-			{
+			if (test_counter_get) {
 				m3_CallV(test_counter_get);
 				int result = 0;
 				m3_GetResultsV(test_counter_get, &result);
 				SDL_Log("test_counter_get -> %d", result);
 			}
 
-			{
+			if (test_counter_inc && test_counter_get) {
 				m3_CallV(test_counter_inc);
 				m3_CallV(test_counter_get);
 				int result = 0;
@@ -176,6 +184,7 @@ bool setup_wasm(const char *file_path) {
 				SDL_Log("test_counter_inc -> test_counter_get -> %d", result);
 			}
 
+			if (test_counter_add && test_counter_get)
 			{
 				m3_CallV(test_counter_add, 42);
 				m3_CallV(test_counter_get);
@@ -193,7 +202,15 @@ bool setup_wasm(const char *file_path) {
 } // namespace
 
 int main(int argc, char **argv) {
-	if (!setup_wasm("test_prog.wasm")) {
+	std::filesystem::path file_path = "boot.wasm";
+
+	for (int i = 1; i < argc; ++i) {
+		auto arg = std::string_view(argv[i]);
+		if (arg.starts_with("-")) continue;
+		file_path = arg;
+	}
+
+	if (!setup_wasm(file_path)) {
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "wasm3 error");
 
 	} else if (auto init = SDL_Init(SDL_INIT_EVERYTHING); init < 0) {
@@ -246,7 +263,7 @@ int main(int argc, char **argv) {
 			if (update) {
 				m3_CallV(update);
 				int result = 0;
-				m3_GetResultsV(test, &result);
+				m3_GetResultsV(update, &result);
 			}
 
 			SDL_RenderPresent(renderer);

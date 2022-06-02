@@ -8,8 +8,9 @@ if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
 endif()
 
 # project
-project(test_prog C)
-add_executable(${PROJECT_NAME} test_prog.c)
+project(pong C CXX)
+add_executable(${PROJECT_NAME} pong.cpp)
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 
 if (EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".wasm")
