@@ -22,7 +22,19 @@ constexpr int default_width = (logical_width * default_scale);
 constexpr int default_height = (logical_height * default_scale);
 constexpr Uint32 fps = 60;
 constexpr Uint32 ms_frame = (1000U / fps);
-constexpr uint32_t memory_size = (1024 * 64);
+constexpr uint32_t memory_size = (1024 * 64) * 2;
+
+constexpr uint8_t input_right = 0b00000001;
+constexpr uint8_t input_left = 0b00000010;
+constexpr uint8_t input_down = 0b00000100;
+constexpr uint8_t input_up = 0b00001000;
+constexpr uint8_t input_a = 0b00010000;
+constexpr uint8_t input_b = 0b00100000;
+constexpr uint8_t input_start = 0b01000000;
+constexpr uint8_t input_select = 0b10000000;
+
+uint8_t input_state_last = 0;
+uint8_t input_state = 0;
 
 SDL_Renderer *renderer = nullptr;
 
@@ -69,6 +81,36 @@ m3ApiRawFunction(wasm_draw_rect) {
 	m3ApiGetArg(int, h);
 	SDL_Rect rect{ x, y, w, h };
 	m3ApiReturn(SDL_RenderFillRect(renderer, &rect));
+}
+
+m3ApiRawFunction(wasm_input) {
+	m3ApiReturnType(int);
+	m3ApiGetArg(int, id);
+	int on = 0;
+	if (id < 0) {
+		// 不正
+	} else if (id >= 8) {
+		// 不正
+	} else {
+		on = (input_state & (1 << id)) ? 1 : 0;
+	}
+	m3ApiReturn(on);
+}
+
+m3ApiRawFunction(wasm_press) {
+	m3ApiReturnType(int);
+	m3ApiGetArg(int, id);
+	int on = 0;
+	if (id < 0) {
+		// 不正
+	} else if (id >= 8) {
+		// 不正
+	} else {
+		auto last = ((input_state_last & (1 << id)) ? 1 : 0);
+		auto current = ((input_state & (1 << id)) ? 1 : 0);
+		on = ((last == 0) && (current != 0)) ? 1 : 0;
+	}
+	m3ApiReturn(on);
 }
 
 std::filesystem::path current_wasm;
@@ -138,12 +180,16 @@ bool setup_wasm(const std::filesystem::path &file_path) {
 		if (!initialize_m3(buffer.data(), buffer.size())) {
 
 		} else {
+			module->memoryImported = true;
+
 			current_wasm = file_path;
 
 			m3_LinkRawFunction(module, "*", "sum", "i(ii)", wasm_sum);
 			m3_LinkRawFunction(module, "*", "ext_memcpy", "*(**i)", wasm_ext_memcpy);
 			m3_LinkRawFunction(module, "*", "draw_color", "i(iii)", wasm_draw_color);
 			m3_LinkRawFunction(module, "*", "draw_rect", "i(iiii)", wasm_draw_rect);
+			m3_LinkRawFunction(module, "*", "input", "i(i)", wasm_input);
+			m3_LinkRawFunction(module, "*", "press", "i(i)", wasm_press);
 			m3_FindFunction(&test, runtime, "test");
 			m3_FindFunction(&test_memcpy, runtime, "test_memcpy");
 			m3_FindFunction(&test_counter_get, runtime, "test_counter_get");
@@ -274,6 +320,16 @@ int main(int argc, char **argv) {
 				setup_wasm(current_wasm);
 			}
 
+			::input_state = 0;
+			if (CurrentKeyboardState[SDL_SCANCODE_RIGHT]) ::input_state |= input_right;
+			if (CurrentKeyboardState[SDL_SCANCODE_LEFT])  ::input_state |= input_left;
+			if (CurrentKeyboardState[SDL_SCANCODE_DOWN])  ::input_state |= input_down;
+			if (CurrentKeyboardState[SDL_SCANCODE_UP])    ::input_state |= input_up;
+			if (CurrentKeyboardState[SDL_SCANCODE_Z]) ::input_state |= input_a;
+			if (CurrentKeyboardState[SDL_SCANCODE_X]) ::input_state |= input_b;
+			if (CurrentKeyboardState[SDL_SCANCODE_RETURN]) ::input_state |= input_start;
+			if (CurrentKeyboardState[SDL_SCANCODE_SPACE]) ::input_state |= input_select;
+
 			SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0);
 			SDL_RenderClear(renderer);
 
@@ -292,6 +348,7 @@ int main(int argc, char **argv) {
 			SDL_RenderPresent(renderer);
 
 			std::copy(CurrentKeyboardState, &CurrentKeyboardState[SDL_NUM_SCANCODES], KeyboardState.begin());
+			::input_state_last = ::input_state;
 
 			auto elapsed_ms = (SDL_GetTicks() - initial_ms);
 			if (elapsed_ms < ms_frame) SDL_Delay(ms_frame - elapsed_ms);
