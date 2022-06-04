@@ -32,11 +32,4 @@
 *.app
 
 # Build directory
-/build
-
-# Include directory
-/include/*
-!/include/.gitkeep
-
-# .gitkeep
-!.gitkeep
+build/
