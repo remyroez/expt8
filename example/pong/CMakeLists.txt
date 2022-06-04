@@ -14,5 +14,5 @@ target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 
 if (EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".wasm")
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s STANDALONE_WASM --no-entry -s ERROR_ON_UNDEFINED_SYMBOLS=0 -O3")
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s STANDALONE_WASM --no-entry -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ALLOW_MEMORY_GROWTH=1 -O3")
 endif()

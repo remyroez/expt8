@@ -146,12 +146,24 @@ void finalize_m3() {
 	}
 }
 
+bool setup_m3(uint32_t stack_size) {
+	bool succeeded = false;
+	if (environment = m3_NewEnvironment(); environment == nullptr) {
+
+	} else if (runtime = m3_NewRuntime(environment, stack_size, nullptr); runtime == nullptr) {
+
+	} else {
+		runtime->memory.maxPages = 1;
+		ResizeMemory(runtime, 1);
+		succeeded = true;
+	}
+	return succeeded;
+}
+
 bool initialize_m3(const uint8_t *const file_data, uint32_t file_size) {
 	bool succeeded = false;
 	finalize_m3();
-	if (environment = m3_NewEnvironment(); environment == nullptr) {
-
-	} else if (runtime = m3_NewRuntime(environment, memory_size, nullptr); runtime == nullptr) {
+	if (!setup_m3(memory_size)) {
 
 	} else if (auto parse_result = m3_ParseModule(environment, &module, file_data, file_size)) {
 
