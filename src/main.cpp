@@ -13,6 +13,8 @@
 #include <wasm3.h>
 #include <m3_env.h>
 
+#define EXPT8_WASM (0)
+
 namespace {
 
 constexpr int logical_width = 256;
@@ -262,18 +264,21 @@ bool setup_wasm(const std::filesystem::path &file_path) {
 } // namespace
 
 int main(int argc, char **argv) {
-	std::filesystem::path file_path = "boot.wasm";
-
-	for (int i = 1; i < argc; ++i) {
-		auto arg = std::string_view(argv[i]);
-		if (arg.starts_with("-")) continue;
-		file_path = arg;
+#if EXPT8_WASM
+	{
+		std::filesystem::path file_path = "boot.wasm";
+		for (int i = 1; i < argc; ++i) {
+			auto arg = std::string_view(argv[i]);
+			if (arg.starts_with("-")) continue;
+			file_path = arg;
+		}
+		if (!setup_wasm(file_path)) {
+			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "wasm3 error");
+		}
 	}
-
-	if (!setup_wasm(file_path)) {
-		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "wasm3 error");
-
-	} else if (auto init = SDL_Init(SDL_INIT_EVERYTHING); init < 0) {
+#endif
+	
+	if (auto init = SDL_Init(SDL_INIT_EVERYTHING); init < 0) {
 		print_sdl_error();
 
 	} else if (auto *window = SDL_CreateWindow(
@@ -327,10 +332,12 @@ int main(int argc, char **argv) {
 
 			auto *CurrentKeyboardState = SDL_GetKeyboardState(nullptr);
 
+#if EXPT8_WASM
 			// reload wasm
 			if (!KeyboardState[SDL_SCANCODE_F5] && CurrentKeyboardState[SDL_SCANCODE_F5]) {
 				setup_wasm(current_wasm);
 			}
+#endif
 
 			::input_state = 0;
 			if (CurrentKeyboardState[SDL_SCANCODE_RIGHT]) ::input_state |= input_right;
@@ -350,13 +357,13 @@ int main(int argc, char **argv) {
 				SDL_Rect rect{ 0, 0, logical_width, logical_height };
 				SDL_RenderFillRect(renderer, &rect);
 			}
-
+#if EXPT8_WASM
 			if (update) {
 				m3_CallV(update);
 				int result = 0;
 				m3_GetResultsV(update, &result);
 			}
-
+#endif
 			SDL_RenderPresent(renderer);
 
 			std::copy(CurrentKeyboardState, &CurrentKeyboardState[SDL_NUM_SCANCODES], KeyboardState.begin());
