@@ -2,6 +2,7 @@
 
 #include <array>
 #include <span>
+#include <algorithm>
 
 namespace expt8 {
 
@@ -20,6 +21,7 @@ struct palette {
 	std::array<color_t, num_colors> colors;
 
 	auto color(size_t index) const { return colors[index % num_colors]; }
+	void color(size_t index, color_t new_color) { colors[index % num_colors] = new_color; }
 };
 
 struct pattern {
@@ -36,6 +38,10 @@ struct pattern {
 	pixel_t pixel(size_t x, size_t y) const {
 		return pixel((y % height) * width + (x % width));
 	}
+
+	void write(std::span<pixel_t> src) {
+		std::copy(src.begin(), src.end(), pixels.begin());
+	}
 };
 
 struct pattern_table {
@@ -49,6 +55,10 @@ struct pattern_table {
 
 	pixel_t get_pixel(size_t position, size_t x, size_t y) const {
 		return get_pattern(position).pixel(x, y);
+	}
+
+	void write(size_t position, std::span<pixel_t> &&src) {
+		patterns[position % num_patterns].write(std::move(src));
 	}
 };
 
@@ -141,6 +151,10 @@ struct background_plane {
 		return palettes[position % num_palettes];
 	}
 
+	void set_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
+		palettes[palette_index % palettes.size()].color(palette_color_index, new_color);
+	}
+
 	const auto &get(size_t x, size_t y, index_t &out_tile_index) const {
 		auto name_table_x = x / width;
 		auto name_table_y = y / height;
@@ -170,7 +184,7 @@ struct sprite {
 
 	coordinate_t x = 0;
 	coordinate_t y = 0;
-	index_t tile_index = 0;
+	index_t tile_index = 0xFF;
 	index_t palette_index = 0;
 	attribute_t attributes = 0;
 };
@@ -182,8 +196,32 @@ struct sprite_plane {
 	std::array<sprite, num_sprites> sprites;
 	std::array<palette, num_palettes> palettes;
 
+	const auto &get_sprite(size_t position) const {
+		return sprites[position % sprites.size()];
+	}
+
+	void set_sprite(
+		size_t position,
+		coordinate_t x = 0,
+		coordinate_t y = 0,
+		index_t tile_index = 0,
+		index_t palette_index = 0,
+		attribute_t attributes = 0
+	) {
+		auto &target = sprites[position % sprites.size()];
+		target.x = x;
+		target.y = y;
+		target.tile_index = tile_index;
+		target.palette_index = palette_index;
+		target.attributes = attributes;
+	}
+
 	const auto &get_palette(size_t position) const {
-		return palettes[position % num_palettes];
+		return palettes[position % palettes.size()];
+	}
+
+	void set_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
+		palettes[palette_index % palettes.size()].color(palette_color_index, new_color);
 	}
 
 	const auto *find_sprite(coordinate_t x, coordinate_t y) const {
@@ -195,9 +233,9 @@ struct sprite_plane {
 				// no hit
 			} else if (y < it.y) {
 				// no hit
-			} else if (x > (it.x + pattern::width)) {
+			} else if (x >= (it.x + pattern::width)) {
 				// no hit
-			} else if (y > (it.y + pattern::height)) {
+			} else if (y >= (it.y + pattern::height)) {
 				// no hit
 			} else {
 				found = &it;
@@ -214,15 +252,51 @@ public:
 	static constexpr size_t num_pattern_tables = 2;
 
 public:
-	template<std::size_t ExtentF, std::size_t ExtentP>
-	bool render(std::span<pixel_t, ExtentF> framebuffer, size_t pitch) {
-
+	bool render(std::span<color_t> framebuffer, size_t width, size_t height) {
+		for (int y = 0; y < height; ++y) {
+			for (int x = 0; x < width; ++x) {
+				auto color = _background_color;
+				if (auto *sprite = _sprite_plane.find_sprite(x, y); sprite && (sprite->tile_index < 0xFF)) {
+					auto palette = _sprite_plane.get_palette(sprite->palette_index);
+					auto pixel = _pattern_tables[1].get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
+					if (pixel > 0) color = palette.color(pixel);
+				}
+				framebuffer[y * width + x] = color;
+			}
+		}
+		return true;
 	}
 
+	void write_pattern(size_t pattern_table_index, size_t tile_index, std::span<pixel_t> &&src) {
+		_pattern_tables[pattern_table_index % num_pattern_tables].write(tile_index, std::move(src));
+	}
+
+	void set_sprite_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
+		_sprite_plane.set_palette(palette_index, palette_color_index, new_color);
+	}
+
+	void set_background_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
+		_background_plane.set_palette(palette_index, palette_color_index, new_color);
+	}
+
+	void set_background_color(color_t color) { _background_color = color; }
+
+	void set_sprite(
+		size_t position,
+		coordinate_t x = 0,
+		coordinate_t y = 0,
+		index_t tile_index = 0xFF,
+		index_t palette_index = 0,
+		attribute_t attributes = 0
+	) {
+		_sprite_plane.set_sprite(position, x, y, tile_index, palette_index, attributes);
+	}
+	
 private:
-	background_plane _background_plane;
-	sprite_plane _sprite_plane;
-	std::array<pattern_table, num_pattern_tables> _pattern_tables;
+	sprite_plane _sprite_plane{};
+	background_plane _background_plane{};
+	color_t _background_color = 0;
+	std::array<pattern_table, num_pattern_tables> _pattern_tables{};
 };
 
 class runtime {
@@ -231,9 +305,33 @@ public:
 	runtime() {}
 
 public:
-	template<std::size_t ExtentF>
-	bool render_picture(std::span<pixel_t, ExtentF> &&framebuffer, size_t pitch) {
-		return _ppu(std::move(framebuffer), pitch);
+	bool render_picture(std::span<color_t> &&framebuffer, size_t width, size_t height) {
+		return _ppu.render(std::move(framebuffer), width, height);
+	}
+
+	void write_pattern(size_t pattern_table_index, size_t tile_index, std::span<pixel_t> &&src) {
+		_ppu.write_pattern(pattern_table_index, tile_index, std::move(src));
+	}
+
+	void set_sprite_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
+		_ppu.set_sprite_palette(palette_index, palette_color_index, new_color);
+	}
+
+	void set_background_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
+		_ppu.set_background_palette(palette_index, palette_color_index, new_color);
+	}
+
+	void set_background_color(color_t color) { _ppu.set_background_color(color); }
+
+	void set_sprite(
+		size_t position,
+		coordinate_t x = 0,
+		coordinate_t y = 0,
+		index_t tile_index = 0xFF,
+		index_t palette_index = 0,
+		attribute_t attributes = 0
+	) {
+		_ppu.set_sprite(position, x, y, tile_index, palette_index, attributes);
 	}
 
 private:

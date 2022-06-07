@@ -315,10 +315,39 @@ int main(int argc, char **argv) {
 		}
 
 		expt8::runtime runtime;
+
+		// dummy bg
+		runtime.set_background_color(0x00);
+
+		// dummy sprite
+		{
+			expt8::pixel_t tile[] = {
+				0, 0, 0, 1, 1, 0, 0, 0,
+				0, 0, 1, 1, 1, 1, 0, 0,
+				0, 1, 1, 1, 1, 1, 1, 0,
+				1, 1, 1, 3, 3, 1, 1, 1,
+				2, 2, 2, 3, 3, 2, 2, 2,
+				0, 2, 2, 2, 2, 2, 2, 0,
+				0, 0, 2, 2, 2, 2, 0, 0,
+				0, 0, 0, 2, 2, 0, 0, 0,
+			};
+			runtime.write_pattern(1, 0, tile);
+			runtime.set_sprite(
+				0,
+				0, 0,
+				0,
+				0
+			);
+			runtime.set_sprite_palette(0, 0, 0);
+			runtime.set_sprite_palette(0, 1, 0x15);
+			runtime.set_sprite_palette(0, 2, 0x29);
+			runtime.set_sprite_palette(0, 3, 0x30);
+		}
+
 		framebuffer fb{ 0 };
 		std::array<Uint32, 256> palette{ 0 };
 
-		// dummy
+		// dummy framebuffer
 		{
 			for (int y = 0; y < logical_height; ++y) {
 				for (int x = 0; x < logical_width; ++x) {
@@ -356,6 +385,8 @@ int main(int argc, char **argv) {
 		auto *screen = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, logical_width, logical_height);
 
 		bool grayscale = false;
+		int spr_x = 0, spr_y = 0;
+		int vel_x = 1, vel_y = 1;
 
 		bool running = true;
 		while (running) {
@@ -411,6 +442,32 @@ int main(int argc, char **argv) {
 				SDL_RenderFillRect(renderer, &rect);
 			}
 #else
+			spr_x += vel_x;
+			spr_y += vel_y;
+			if (spr_x < 0) {
+				spr_x = 0;
+				vel_x = -vel_x;
+
+			} else if ((spr_x + expt8::pattern::width) >= logical_width) {
+				spr_x = logical_width - expt8::pattern::width;
+				vel_x = -vel_x;
+			}
+			if (spr_y < 0) {
+				spr_y = 0;
+				vel_y = -vel_y;
+
+			} else if ((spr_y + expt8::pattern::height) >= logical_height) {
+				spr_y = logical_height - expt8::pattern::height;
+				vel_y = -vel_y;
+			}
+			runtime.set_sprite(
+				0,
+				spr_x, spr_y,
+				0,
+				0
+			);
+
+			runtime.render_picture(std::span{fb}, logical_width, logical_height);
 			{
 				auto *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
 				void *pixels = nullptr;
