@@ -355,6 +355,8 @@ int main(int argc, char **argv) {
 
 		auto *screen = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, logical_width, logical_height);
 
+		bool grayscale = false;
+
 		bool running = true;
 		while (running) {
 			auto initial_ms = SDL_GetTicks();
@@ -384,7 +386,11 @@ int main(int argc, char **argv) {
 				setup_wasm(current_wasm);
 			}
 #endif
-
+#if 0
+			if (!KeyboardState[SDL_SCANCODE_SPACE] && CurrentKeyboardState[SDL_SCANCODE_SPACE]) {
+				grayscale = !grayscale;
+			}
+#endif
 			::input_state = 0;
 			if (CurrentKeyboardState[SDL_SCANCODE_RIGHT]) ::input_state |= input_right;
 			if (CurrentKeyboardState[SDL_SCANCODE_LEFT])  ::input_state |= input_left;
@@ -414,6 +420,7 @@ int main(int argc, char **argv) {
 						auto *dst = (Uint32 *)((Uint8 *)pixels + y * pitch);
 						for (int x = 0; x < logical_width; ++x) {
 							auto index_color = fb[y * logical_width + x];
+							//if (grayscale && ((index_color & 0x0F) <= 0x0C)) index_color = index_color & ~0x0F;
 							dst[x] = palette[index_color];
 						}
 					}
@@ -432,7 +439,7 @@ int main(int argc, char **argv) {
 #endif
 			SDL_RenderPresent(renderer);
 
-#if EXPT8_WASM
+#if 1//EXPT8_WASM
 			std::copy(CurrentKeyboardState, &CurrentKeyboardState[SDL_NUM_SCANCODES], KeyboardState.begin());
 #endif
 			::input_state_last = ::input_state;
