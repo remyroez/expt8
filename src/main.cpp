@@ -7,11 +7,14 @@
 #include <algorithm>
 #include <string_view>
 #include <filesystem>
+#include <array>
 
 #include <SDL.h>
 
 #include <wasm3.h>
 #include <m3_env.h>
+
+#include "runtime.h"
 
 #define EXPT8_WASM (0)
 
@@ -25,6 +28,8 @@ constexpr int default_height = (logical_height * default_scale);
 constexpr Uint32 fps = 60;
 constexpr Uint32 ms_frame = (1000U / fps);
 constexpr uint32_t memory_size = (1024 * 64) * 2;
+
+using framebuffer = std::array<expt8::pixel_t, logical_width * logical_height>;
 
 constexpr uint8_t input_right = 0b00000001;
 constexpr uint8_t input_left = 0b00000010;
@@ -309,6 +314,47 @@ int main(int argc, char **argv) {
 			KeyboardState.resize(Num);
 		}
 
+		expt8::runtime runtime;
+		framebuffer fb{ 0 };
+		std::array<Uint32, 256> palette{ 0 };
+
+		// dummy
+		{
+			for (int y = 0; y < logical_height; ++y) {
+				for (int x = 0; x < logical_width; ++x) {
+					fb[y * logical_width + x] = x / 16 + y / 16 * 16;
+				}
+			}
+		}
+
+		// palette
+		{
+			constexpr Uint32 rgb_colors[] = {
+				0x757575, 0x271B8F, 0x0000AB, 0x47009F, 0x8F0077, 0xAB0013, 0xA70000, 0x7F0B00,
+				0x432F00, 0x004700, 0x005100, 0x003F17, 0x1B3F5F, 0x000000, 0x000000, 0x000000,
+
+				0xBCBCBC, 0x0073EF, 0x233BEF, 0x8300F3, 0xBF00BF, 0xE7005B, 0xDB2B00, 0xCB4F0F,
+				0x8B7300, 0x009700, 0x00AB00, 0x00933B, 0x00838B, 0x000000, 0x000000, 0x000000,
+
+				0xFFFFFF, 0x3FBFFF, 0x5F73FF, 0xA78BFD, 0xF77BFF, 0xFF77B7, 0xFF7763, 0xFF9B3B,
+				0xF3BF3F, 0x83D313, 0x4FDF4B, 0x58F898, 0x00EBDB, 0x757575, 0x000000, 0x000000,
+
+				0xFFFFFF, 0xABE7FF, 0xC7D7FF, 0xD7CBFF, 0xFFC7FF, 0xFFC7DB, 0xFFBFB3, 0xFFDBAB,
+				0xFFE7A3, 0xE3FFA3, 0xABF3BF, 0xB3FFCF, 0x9FFFF3, 0xBCBCBC, 0x000000, 0x000000,
+			};
+			constexpr size_t num_colors = sizeof(rgb_colors) / sizeof(rgb_colors[0]);
+
+			auto *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+			auto pal = std::span{ palette.data(), num_colors };
+
+			for (int i = 0; i < pal.size(); ++i) {
+				auto color = rgb_colors[i];
+				pal[i] = SDL_MapRGB(format, (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF);
+			}
+		}
+
+		auto *screen = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, logical_width, logical_height);
+
 		bool running = true;
 		while (running) {
 			auto initial_ms = SDL_GetTicks();
@@ -352,11 +398,31 @@ int main(int argc, char **argv) {
 			SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0);
 			SDL_RenderClear(renderer);
 
+#if 0
 			{
 				SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 				SDL_Rect rect{ 0, 0, logical_width, logical_height };
 				SDL_RenderFillRect(renderer, &rect);
 			}
+#else
+			{
+				auto *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+				void *pixels = nullptr;
+				int pitch = 0;
+				if (SDL_LockTexture(screen, nullptr, &pixels, &pitch) >= 0) {
+					for (int y = 0; y < logical_height; ++y) {
+						auto *dst = (Uint32 *)((Uint8 *)pixels + y * pitch);
+						for (int x = 0; x < logical_width; ++x) {
+							auto index_color = fb[y * logical_width + x];
+							dst[x] = palette[index_color];
+						}
+					}
+					SDL_UnlockTexture(screen);
+				}
+				SDL_RenderCopy(renderer, screen, nullptr, nullptr);
+			}
+#endif
+
 #if EXPT8_WASM
 			if (update) {
 				m3_CallV(update);
@@ -366,7 +432,9 @@ int main(int argc, char **argv) {
 #endif
 			SDL_RenderPresent(renderer);
 
+#if EXPT8_WASM
 			std::copy(CurrentKeyboardState, &CurrentKeyboardState[SDL_NUM_SCANCODES], KeyboardState.begin());
+#endif
 			::input_state_last = ::input_state;
 
 			auto elapsed_ms = (SDL_GetTicks() - initial_ms);

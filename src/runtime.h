@@ -9,14 +9,15 @@ using coordinate_t = int32_t;
 using index_t = uint8_t;
 using attribute_t = uint8_t;
 
-using pixel_t = index_t;
 using palette_color_index_t = index_t;
 using hardware_color_index_t = index_t;
-using hardware_color_t = uint32_t;
+
+using color_t = hardware_color_index_t;
+using pixel_t = palette_color_index_t;
 
 struct palette {
 	static constexpr size_t num_colors = 4;
-	std::array<index_t, num_colors> colors;
+	std::array<color_t, num_colors> colors;
 
 	auto color(size_t index) const { return colors[index % num_colors]; }
 };
@@ -127,7 +128,6 @@ struct background_plane {
 
 	std::array<name_table, num_name_tables> name_tables;
 	std::array<palette, num_palettes> palettes;
-	pattern_table pattern_table;
 
 	const auto &get_name_table(size_t position) const {
 		return name_tables[position];
@@ -141,7 +141,7 @@ struct background_plane {
 		return palettes[position % num_palettes];
 	}
 
-	auto render(size_t x, size_t y) const {
+	const auto &get(size_t x, size_t y, index_t &out_tile_index) const {
 		auto name_table_x = x / width;
 		auto name_table_y = y / height;
 		auto &name_table = get_name_table(name_table_x, name_table_y);
@@ -152,12 +152,8 @@ struct background_plane {
 		index_t palette_index = 0;
 		name_table.get(name_x, name_y, tile_index, palette_index);
 
-		auto tile_x = x % pattern::width;
-		auto tile_y = y % pattern::height;
-		auto palette_color_index = pattern_table.get_pixel(tile_index, tile_x, tile_y);
-
-		auto &palette = get_palette(palette_index);
-		return palette.color(palette_color_index);
+		out_tile_index = tile_index;
+		return get_palette(palette_index);
 	}
 };
 
@@ -185,7 +181,10 @@ struct sprite_plane {
 
 	std::array<sprite, num_sprites> sprites;
 	std::array<palette, num_palettes> palettes;
-	pattern_table pattern_table;
+
+	const auto &get_palette(size_t position) const {
+		return palettes[position % num_palettes];
+	}
 
 	const auto *find_sprite(coordinate_t x, coordinate_t y) const {
 		const sprite *found = nullptr;
@@ -212,17 +211,18 @@ struct sprite_plane {
 
 class ppu {
 public:
+	static constexpr size_t num_pattern_tables = 2;
+
+public:
 	template<std::size_t ExtentF, std::size_t ExtentP>
-	bool render(
-		std::span<pixel_t, ExtentF> framebuffer,
-		std::span<hardware_color_t, ExtentP> hardware_palette
-	) {
+	bool render(std::span<pixel_t, ExtentF> framebuffer, size_t pitch) {
 
 	}
 
 private:
 	background_plane _background_plane;
 	sprite_plane _sprite_plane;
+	std::array<pattern_table, num_pattern_tables> _pattern_tables;
 };
 
 class runtime {
@@ -231,12 +231,9 @@ public:
 	runtime() {}
 
 public:
-	template<std::size_t ExtentF, std::size_t ExtentP>
-	bool render_picture(
-		std::span<pixel_t, ExtentF> &&framebuffer,
-		std::span<hardware_color_t, ExtentP> &&hardware_palette
-	) {
-		return _ppu(std::move(framebuffer), std::move(hardware_palette));
+	template<std::size_t ExtentF>
+	bool render_picture(std::span<pixel_t, ExtentF> &&framebuffer, size_t pitch) {
+		return _ppu(std::move(framebuffer), pitch);
 	}
 
 private:
