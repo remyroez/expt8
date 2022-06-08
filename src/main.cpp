@@ -316,8 +316,47 @@ int main(int argc, char **argv) {
 
 		expt8::runtime runtime;
 
-		// dummy bg
+		// dummy bg color
 		runtime.set_background_color(0x00);
+
+		// dummy bg
+		{
+			expt8::pixel_t tile[] = {
+				1, 1, 1, 1, 1, 1, 1, 1,
+				1, 2, 2, 2, 2, 2, 2, 1,
+				1, 2, 3, 3, 3, 3, 2, 1,
+				1, 2, 3, 0, 0, 3, 2, 1,
+				1, 2, 3, 0, 0, 3, 2, 1,
+				1, 2, 3, 3, 3, 3, 2, 1,
+				1, 2, 2, 2, 2, 2, 2, 1,
+				1, 1, 1, 1, 1, 1, 1, 1,
+			};
+			runtime.write_pattern(0, 0, tile);
+			runtime.set_background_palette(0, 0x00, 0x0F, 0x21, 0x26);
+		}
+		{
+			expt8::pixel_t tile[] = {
+				1, 1, 1, 1, 1, 1, 1, 1,
+				2, 2, 2, 2, 2, 2, 2, 2,
+				3, 3, 3, 3, 3, 3, 3, 3,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				3, 3, 3, 3, 3, 3, 3, 3,
+				2, 2, 2, 2, 2, 2, 2, 2,
+				1, 1, 1, 1, 1, 1, 1, 1,
+			};
+			runtime.write_pattern(0, 1, tile);
+			runtime.set_background_palette(1, 0x00, 0x29, 0x13, 0x0F);
+		}
+		{
+			int p = 0;
+			for (int y = 0; y < logical_height; ++y) {
+				for (int x = 0; x < logical_width; ++x) {
+					runtime.set_tile(0, x, y, x % 2);
+					if ((x % 2 == 0) && (y % 2 == 0)) runtime.set_tile_palette(0, x, y, p++ % 2);
+				}
+			}
+		}
 
 		// dummy sprite
 		{
@@ -332,16 +371,14 @@ int main(int argc, char **argv) {
 				0, 0, 0, 2, 2, 0, 0, 0,
 			};
 			runtime.write_pattern(1, 0, tile);
+			runtime.set_sprite_pattern_table(1);
 			runtime.set_sprite(
 				0,
 				0, 0,
 				0,
 				0
 			);
-			runtime.set_sprite_palette(0, 0, 0);
-			runtime.set_sprite_palette(0, 1, 0x15);
-			runtime.set_sprite_palette(0, 2, 0x29);
-			runtime.set_sprite_palette(0, 3, 0x30);
+			runtime.set_sprite_palette(0, 0x00, 0x15, 0x29, 0x30);
 		}
 
 		framebuffer fb{ 0 };
