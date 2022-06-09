@@ -8,6 +8,7 @@
 #include <string_view>
 #include <filesystem>
 #include <array>
+#include <random>
 
 #include <SDL.h>
 
@@ -422,8 +423,24 @@ int main(int argc, char **argv) {
 		auto *screen = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, logical_width, logical_height);
 
 		bool grayscale = false;
-		int spr_x = 0, spr_y = 0;
-		int vel_x = 1, vel_y = 1;
+
+		std::random_device rd;
+		std::mt19937 mt(rd());
+		std::uniform_int_distribution<> distw(0, logical_width - expt8::pattern::width);
+		std::uniform_int_distribution<> disth(0, logical_height - expt8::pattern::height);
+		std::uniform_int_distribution<> disti(0, 1);
+
+		struct entity {
+			int spr_x = 0, spr_y = 0;
+			int vel_x = 1, vel_y = 1;
+		};
+		std::array<entity, 64> entities;
+		for (int i = 0; i < entities.size(); ++i) {
+			entities[i].spr_x = distw(mt);
+			entities[i].spr_y = disth(mt);
+			entities[i].vel_x = disti(mt) == 0 ? -1 : 1;
+			entities[i].vel_y = disti(mt) == 0 ? -1 : 1;
+		}
 
 		bool running = true;
 		while (running) {
@@ -479,30 +496,38 @@ int main(int argc, char **argv) {
 				SDL_RenderFillRect(renderer, &rect);
 			}
 #else
-			spr_x += vel_x;
-			spr_y += vel_y;
-			if (spr_x < 0) {
-				spr_x = 0;
-				vel_x = -vel_x;
 
-			} else if ((spr_x + expt8::pattern::width) >= logical_width) {
-				spr_x = logical_width - expt8::pattern::width;
-				vel_x = -vel_x;
-			}
-			if (spr_y < 0) {
-				spr_y = 0;
-				vel_y = -vel_y;
+			for (int i = 0; i < entities.size(); ++i) {
+				auto &spr_x = entities[i].spr_x;
+				auto &spr_y = entities[i].spr_y;
+				auto &vel_x = entities[i].vel_x;
+				auto &vel_y = entities[i].vel_y;
+				spr_x += vel_x;
+				spr_y += vel_y;
+				if (spr_x < 0) {
+					spr_x = 0;
+					vel_x = -vel_x;
 
-			} else if ((spr_y + expt8::pattern::height) >= logical_height) {
-				spr_y = logical_height - expt8::pattern::height;
-				vel_y = -vel_y;
+				} else if ((spr_x + expt8::pattern::width) >= logical_width) {
+					spr_x = logical_width - expt8::pattern::width;
+					vel_x = -vel_x;
+				}
+				if (spr_y < 0) {
+					spr_y = 0;
+					vel_y = -vel_y;
+
+				} else if ((spr_y + expt8::pattern::height) >= logical_height) {
+					spr_y = logical_height - expt8::pattern::height;
+					vel_y = -vel_y;
+				}
+				runtime.set_sprite(
+					i,
+					spr_x, spr_y,
+					0,
+					0,
+					(i >= 32) ? expt8::sprite::priority_back : 0
+				);
 			}
-			runtime.set_sprite(
-				0,
-				spr_x, spr_y,
-				0,
-				0
-			);
 
 			runtime.render_picture(std::span{fb}, logical_width, logical_height);
 			{

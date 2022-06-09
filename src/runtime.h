@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <vector>
 #include <span>
 #include <algorithm>
 
@@ -246,6 +247,12 @@ struct sprite {
 	index_t tile_index = 0xFF;
 	index_t palette_index = 0;
 	attribute_t attributes = 0;
+
+	auto left() const { return x; }
+	auto right() const { return left() + pattern::width; }
+	auto top() const { return y; }
+	auto bottom() const { return top() + pattern::height; }
+	bool has_attribute(uint32_t attr) const { return (attributes & attr) != 0; }
 };
 
 struct sprite_plane {
@@ -284,8 +291,8 @@ struct sprite_plane {
 		palettes[palette_index % palettes.size()].color(palette_color_index, new_color);
 	}
 
-	const auto *find_sprite(coordinate_t x, coordinate_t y) const {
-		const sprite *found = nullptr;
+	bool find_sprites(coordinate_t x, coordinate_t y, std::vector<const sprite *> &out_front_sprites, std::vector<const sprite *> &out_back_sprites) const {
+		bool found = false;
 		for (auto &it : sprites) {
 			if (it.tile_index == 0xFF) {
 				// unused
@@ -298,13 +305,37 @@ struct sprite_plane {
 			} else if (y >= (it.y + pattern::height)) {
 				// no hit
 			} else {
-				found = &it;
-				break;
+				if (it.has_attribute(sprite::priority_back)) {
+					out_back_sprites.push_back(&it);
+				} else {
+					out_front_sprites.push_back(&it);
+				}
+				found = true;
 			}
 		}
 		return found;
 	}
 
+	bool find_sprites(coordinate_t y, std::vector<const sprite *> &out_front_sprites, std::vector<const sprite *> &out_back_sprites) const {
+		bool found = false;
+		for (auto &it : sprites) {
+			if (it.tile_index == 0xFF) {
+				// unused
+			} else if (y < it.y) {
+				// no hit
+			} else if (y >= (it.y + pattern::height)) {
+				// no hit
+			} else {
+				if (it.has_attribute(sprite::priority_back)) {
+					out_back_sprites.push_back(&it);
+				} else {
+					out_front_sprites.push_back(&it);
+				}
+				found = true;
+			}
+		}
+		return found;
+	}
 };
 
 class ppu {
@@ -313,21 +344,49 @@ public:
 
 public:
 	bool render(std::span<color_t> framebuffer, size_t width, size_t height) {
+		std::vector<const sprite *> front_sprites;
+		std::vector<const sprite *> back_sprites;
 		for (int y = 0; y < height; ++y) {
 			for (int x = 0; x < width; ++x) {
 				auto color = _background_color;
+				bool found_color = false;
 
-				{
+				front_sprites.clear();
+				back_sprites.clear();
+				_sprite_plane.find_sprites(x, y, front_sprites, back_sprites);
+
+				if (front_sprites.size() > 0) {
+					for (auto *sprite : front_sprites) {
+						auto palette = _sprite_plane.get_palette(sprite->palette_index);
+						auto pixel = _pattern_tables[_sprite_plane.pattern_table_index].get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
+						if (pixel > 0) {
+							color = palette.color(pixel);
+							found_color = true;
+							break;
+						}
+					}
+				}
+
+				if (!found_color) {
 					index_t tile_index = 0;
 					auto palette = _background_plane.get(x, y, tile_index);
 					auto pixel = _pattern_tables[_background_plane.pattern_table_index].get_pixel(tile_index, x, y);
-					if (pixel > 0) color = palette.color(pixel);
+					if (pixel > 0) {
+						color = palette.color(pixel);
+						found_color = true;
+					}
 				}
 
-				if (auto *sprite = _sprite_plane.find_sprite(x, y); sprite && (sprite->tile_index < 0xFF)) {
-					auto palette = _sprite_plane.get_palette(sprite->palette_index);
-					auto pixel = _pattern_tables[_sprite_plane.pattern_table_index].get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
-					if (pixel > 0) color = palette.color(pixel);
+				if (!found_color && (back_sprites.size() > 0)) {
+					for (auto *sprite : back_sprites) {
+						auto palette = _sprite_plane.get_palette(sprite->palette_index);
+						auto pixel = _pattern_tables[_sprite_plane.pattern_table_index].get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
+						if (pixel > 0) {
+							color = palette.color(pixel);
+							found_color = true;
+							break;
+						}
+					}
 				}
 
 				framebuffer[y * width + x] = color;
