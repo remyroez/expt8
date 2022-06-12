@@ -333,7 +333,6 @@ int main(int argc, char **argv) {
 				1, 1, 1, 1, 1, 1, 1, 1,
 			};
 			runtime.write_pattern(0, 0, tile);
-			runtime.set_background_palette(0, 0x00, 0x0F, 0x21, 0x26);
 		}
 		{
 			expt8::pixel_t tile[] = {
@@ -347,14 +346,59 @@ int main(int argc, char **argv) {
 				1, 1, 1, 1, 1, 1, 1, 1,
 			};
 			runtime.write_pattern(0, 1, tile);
+		}
+		{
+			expt8::pixel_t tile[] = {
+				1, 3, 3, 3, 3, 3, 3, 2,
+				3, 1, 0, 0, 0, 0, 2, 3,
+				3, 0, 1, 0, 0, 2, 0, 3,
+				3, 0, 0, 1, 2, 0, 0, 3,
+				3, 0, 0, 2, 1, 0, 0, 3,
+				3, 0, 2, 0, 0, 1, 0, 3,
+				3, 2, 0, 0, 0, 0, 1, 3,
+				2, 3, 3, 3, 3, 3, 3, 1,
+			};
+			runtime.write_pattern(0, 2, tile);
+		}
+		{
+			expt8::pixel_t tile[] = {
+				3, 0, 1, 1, 1, 1, 0, 3,
+				0, 1, 0, 0, 0, 0, 1, 0,
+				1, 0, 2, 2, 2, 2, 0, 1,
+				1, 0, 2, 0, 0, 2, 0, 1,
+				1, 0, 2, 0, 0, 2, 0, 1,
+				1, 0, 2, 2, 2, 2, 0, 1,
+				0, 1, 0, 0, 0, 0, 1, 0,
+				3, 0, 1, 1, 1, 1, 0, 3,
+			};
+			runtime.write_pattern(0, 3, tile);
+		}
+		{
+			runtime.set_background_palette(0, 0x00, 0x0F, 0x21, 0x26);
 			runtime.set_background_palette(1, 0x00, 0x29, 0x13, 0x0F);
 		}
 		{
 			int p = 0;
-			for (int y = 0; y < logical_height; ++y) {
-				for (int x = 0; x < logical_width; ++x) {
+			for (int y = 0; y < expt8::tile_table::height; ++y) {
+				for (int x = 0; x < expt8::tile_table::width; ++x) {
 					runtime.set_tile(0, x, y, x % 2);
 					if ((x % 2 == 0) && (y % 2 == 0)) runtime.set_tile_palette(0, x, y, p++ % 2);
+				}
+			}
+		}
+		{
+			int p = 0;
+			for (int y = 0; y < expt8::tile_table::height; ++y) {
+				for (int x = 0; x < expt8::tile_table::width; ++x) {
+					runtime.set_tile(1, x, y, (x == 0 || x == (expt8::tile_table::width - 1) || y == 0 || y == (expt8::tile_table::height - 1)) ? 2 : 0);
+				}
+			}
+		}
+		{
+			int p = 0;
+			for (int y = 0; y < expt8::tile_table::height; ++y) {
+				for (int x = 0; x < expt8::tile_table::width; ++x) {
+					runtime.set_tile(2, x, y, (x == 0 || x == (expt8::tile_table::width - 1) || y == 0 || y == (expt8::tile_table::height - 1)) ? 3 : 0);
 				}
 			}
 		}
@@ -442,6 +486,8 @@ int main(int argc, char **argv) {
 			entities[i].vel_x = disti(mt) == 0 ? -1 : 1;
 			entities[i].vel_y = disti(mt) == 0 ? -1 : 1;
 		}
+		expt8::coordinate_t scroll_x = 0;
+		expt8::coordinate_t scroll_y = 0;
 
 		const auto unit = SDL_GetPerformanceFrequency() / ::fps;
 		auto before_ticks = SDL_GetPerformanceCounter();
@@ -501,6 +547,12 @@ int main(int argc, char **argv) {
 			int count = 0;
 			bool skip = (lag / unit) > 1;
 			while (lag >= unit) {
+				if (::input_state & ::input_right) scroll_x += 1;
+				if (::input_state & ::input_left) scroll_x -= 1;
+				if (::input_state & ::input_down) scroll_y += 1;
+				if (::input_state & ::input_up) scroll_y -= 1;
+				runtime.set_scroll(scroll_x, scroll_y);
+
 				for (int i = 0; i < entities.size(); ++i) {
 					auto &spr_x = entities[i].spr_x;
 					auto &spr_y = entities[i].spr_y;
@@ -532,6 +584,7 @@ int main(int argc, char **argv) {
 						(i >= 32) ? expt8::sprite::priority_back : 0
 					);
 				}
+
 				runtime.render_picture(std::span{ fb }, logical_width, logical_height);
 				lag -= unit;
 

@@ -344,10 +344,17 @@ public:
 
 public:
 	bool render(std::span<color_t> framebuffer, size_t width, size_t height) {
+		constexpr auto pixel_width = static_cast<int>(background_plane::pixel_width * background_plane::width);
+		constexpr auto pixel_height = static_cast<int>(background_plane::pixel_height * background_plane::height);
 		std::vector<const sprite *> front_sprites;
 		std::vector<const sprite *> back_sprites;
 		for (int y = 0; y < height; ++y) {
 			for (int x = 0; x < width; ++x) {
+				auto xx = x + (scroll_x % pixel_width);
+				auto yy = y + (scroll_y % pixel_height);
+				if (xx < 0) xx += pixel_width;
+				if (yy < 0) yy += pixel_height;
+
 				auto color = _background_color;
 				bool found_color = false;
 
@@ -369,8 +376,8 @@ public:
 
 				if (!found_color) {
 					index_t tile_index = 0;
-					auto palette = _background_plane.get(x, y, tile_index);
-					auto pixel = _pattern_tables[_background_plane.pattern_table_index].get_pixel(tile_index, x, y);
+					auto palette = _background_plane.get(xx, yy, tile_index);
+					auto pixel = _pattern_tables[_background_plane.pattern_table_index].get_pixel(tile_index, xx, yy);
 					if (pixel > 0) {
 						color = palette.color(pixel);
 						found_color = true;
@@ -450,11 +457,19 @@ public:
 		_background_plane.set_tile_palette(name_table_index, x, y, index);
 	}
 
+	void set_scroll(coordinate_t x = 0, coordinate_t y = 0) {
+		scroll_x = x;
+		scroll_y = y;
+	}
+
 private:
 	sprite_plane _sprite_plane{};
 	background_plane _background_plane{};
 	color_t _background_color = 0;
 	std::array<pattern_table, num_pattern_tables> _pattern_tables{};
+
+	coordinate_t scroll_x = 0;
+	coordinate_t scroll_y = 0;
 };
 
 class runtime {
@@ -480,6 +495,8 @@ public:
 
 	INSTALL_PPU_FN(set_tile);
 	INSTALL_PPU_FN(set_tile_palette);
+
+	INSTALL_PPU_FN(set_scroll);
 
 #undef INSTALL_PPU_FN
 #undef INSTALL_PPU_FN_EX
