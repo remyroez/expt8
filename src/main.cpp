@@ -26,8 +26,8 @@ constexpr int logical_height = 240;
 constexpr int default_scale = 2;
 constexpr int default_width = (logical_width * default_scale);
 constexpr int default_height = (logical_height * default_scale);
-constexpr Uint32 fps = 60;
-constexpr Uint32 ms_frame = (1000U / fps);
+constexpr Uint64 fps = 60;
+constexpr Uint64 ms_frame = (1000LLU / fps);
 constexpr uint32_t memory_size = (1024 * 64) * 2;
 
 using framebuffer = std::array<expt8::pixel_t, logical_width * logical_height>;
@@ -423,6 +423,7 @@ int main(int argc, char **argv) {
 		auto *screen = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, logical_width, logical_height);
 
 		bool grayscale = false;
+		bool fullscreen = false;
 
 		std::random_device rd;
 		std::mt19937 mt(rd());
@@ -442,23 +443,28 @@ int main(int argc, char **argv) {
 			entities[i].vel_y = disti(mt) == 0 ? -1 : 1;
 		}
 
+		const auto unit = SDL_GetPerformanceFrequency() / ::fps;
+		auto before_ticks = SDL_GetPerformanceCounter();
+		Uint64 lag = 0;
+		int max_skip = 2;
+
 		bool running = true;
 		while (running) {
-			auto initial_ms = SDL_GetTicks();
-			bool press = false;
+			auto current_ticks = SDL_GetPerformanceCounter();
+			auto elapsed_ticks = current_ticks - before_ticks;
+			before_ticks = current_ticks;
+			lag += elapsed_ticks;
+
 			SDL_Event event{};
 			while (SDL_PollEvent(&event) != 0) {
 				if (event.type == SDL_QUIT) {
 					running = false;
 
 				} else if (event.type == SDL_WINDOWEVENT) {
-					if ((event.window.type == SDL_WINDOWEVENT_CLOSE) && (event.window.windowID == SDL_GetWindowID(window))) {
+					if (event.window.windowID != SDL_GetWindowID(window)) {
+						//
+					} else if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
 						running = false;
-					}
-
-				} else if (event.type == SDL_KEYDOWN) {
-					if ((event.key.state == SDL_PRESSED) && (event.key.windowID == SDL_GetWindowID(window)) && (event.key.repeat == 0)) {
-						press = true;
 					}
 				}
 			}
@@ -471,11 +477,17 @@ int main(int argc, char **argv) {
 				setup_wasm(current_wasm);
 			}
 #endif
-#if 0
-			if (!KeyboardState[SDL_SCANCODE_SPACE] && CurrentKeyboardState[SDL_SCANCODE_SPACE]) {
-				grayscale = !grayscale;
+
+			if (!KeyboardState[SDL_SCANCODE_F11] && CurrentKeyboardState[SDL_SCANCODE_F11]) {
+				if (fullscreen) {
+					SDL_SetWindowFullscreen(window, 0);
+
+				} else {
+					SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+				}
+				fullscreen = !fullscreen;
 			}
-#endif
+
 			::input_state = 0;
 			if (CurrentKeyboardState[SDL_SCANCODE_RIGHT]) ::input_state |= input_right;
 			if (CurrentKeyboardState[SDL_SCANCODE_LEFT])  ::input_state |= input_left;
@@ -485,8 +497,68 @@ int main(int argc, char **argv) {
 			if (CurrentKeyboardState[SDL_SCANCODE_X]) ::input_state |= input_b;
 			if (CurrentKeyboardState[SDL_SCANCODE_RETURN]) ::input_state |= input_start;
 			if (CurrentKeyboardState[SDL_SCANCODE_SPACE]) ::input_state |= input_select;
+			
+			int count = 0;
+			bool skip = (lag / unit) > 1;
+			while (lag >= unit) {
+				for (int i = 0; i < entities.size(); ++i) {
+					auto &spr_x = entities[i].spr_x;
+					auto &spr_y = entities[i].spr_y;
+					auto &vel_x = entities[i].vel_x;
+					auto &vel_y = entities[i].vel_y;
+					spr_x += vel_x;
+					spr_y += vel_y;
+					if (spr_x < 0) {
+						spr_x = 0;
+						vel_x = -vel_x;
 
-			SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0);
+					} else if ((spr_x + expt8::pattern::width) >= logical_width) {
+						spr_x = logical_width - expt8::pattern::width;
+						vel_x = -vel_x;
+					}
+					if (spr_y < 0) {
+						spr_y = 0;
+						vel_y = -vel_y;
+
+					} else if ((spr_y + expt8::pattern::height) >= logical_height) {
+						spr_y = logical_height - expt8::pattern::height;
+						vel_y = -vel_y;
+					}
+					runtime.set_sprite(
+						i,
+						spr_x, spr_y,
+						0,
+						0,
+						(i >= 32) ? expt8::sprite::priority_back : 0
+					);
+				}
+				runtime.render_picture(std::span{ fb }, logical_width, logical_height);
+				lag -= unit;
+
+				count++;
+				if (count > max_skip) {
+					lag = 0;
+					break;
+				}
+
+				if (skip) {
+					while (SDL_PollEvent(&event) != 0) {
+						if (event.type == SDL_QUIT) {
+							running = false;
+
+						} else if (event.type == SDL_WINDOWEVENT) {
+							if (event.window.windowID != SDL_GetWindowID(window)) {
+								//
+							} else if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+								running = false;
+							}
+						}
+					}
+					SDL_Delay(1);
+				}
+			}
+
+			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 			SDL_RenderClear(renderer);
 
 #if 0
@@ -497,39 +569,6 @@ int main(int argc, char **argv) {
 			}
 #else
 
-			for (int i = 0; i < entities.size(); ++i) {
-				auto &spr_x = entities[i].spr_x;
-				auto &spr_y = entities[i].spr_y;
-				auto &vel_x = entities[i].vel_x;
-				auto &vel_y = entities[i].vel_y;
-				spr_x += vel_x;
-				spr_y += vel_y;
-				if (spr_x < 0) {
-					spr_x = 0;
-					vel_x = -vel_x;
-
-				} else if ((spr_x + expt8::pattern::width) >= logical_width) {
-					spr_x = logical_width - expt8::pattern::width;
-					vel_x = -vel_x;
-				}
-				if (spr_y < 0) {
-					spr_y = 0;
-					vel_y = -vel_y;
-
-				} else if ((spr_y + expt8::pattern::height) >= logical_height) {
-					spr_y = logical_height - expt8::pattern::height;
-					vel_y = -vel_y;
-				}
-				runtime.set_sprite(
-					i,
-					spr_x, spr_y,
-					0,
-					0,
-					(i >= 32) ? expt8::sprite::priority_back : 0
-				);
-			}
-
-			runtime.render_picture(std::span{fb}, logical_width, logical_height);
 			{
 				auto *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
 				void *pixels = nullptr;
@@ -561,10 +600,7 @@ int main(int argc, char **argv) {
 #if 1//EXPT8_WASM
 			std::copy(CurrentKeyboardState, &CurrentKeyboardState[SDL_NUM_SCANCODES], KeyboardState.begin());
 #endif
-			::input_state_last = ::input_state;
-
-			auto elapsed_ms = (SDL_GetTicks() - initial_ms);
-			if (elapsed_ms < ms_frame) SDL_Delay(ms_frame - elapsed_ms);
+			SDL_Delay(1);
 		}
 
 		SDL_DestroyRenderer(renderer);
