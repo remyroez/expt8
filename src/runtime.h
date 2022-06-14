@@ -17,6 +17,11 @@ using hardware_color_index_t = index_t;
 using color_t = hardware_color_index_t;
 using pixel_t = palette_color_index_t;
 
+enum class mirror_mode {
+	vertical,
+	horizontal,
+};
+
 struct palette {
 	static constexpr size_t num_colors = 4;
 	std::array<color_t, num_colors> colors;
@@ -168,9 +173,12 @@ struct name_table {
 };
 
 struct background_plane {
-	static constexpr size_t width = 2;
-	static constexpr size_t height = 2;
-	static constexpr size_t num_name_tables = width * height;
+	static constexpr auto name_table_mirroring = mirror_mode::vertical;
+
+	static constexpr size_t num_name_tables = 2;
+	static constexpr size_t width = (name_table_mirroring == mirror_mode::vertical) ? num_name_tables : 1;
+	static constexpr size_t height = (name_table_mirroring == mirror_mode::horizontal) ? num_name_tables : 1;
+
 	static constexpr size_t num_palettes = 4;
 	static constexpr size_t pixel_width = tile_table::width * pattern::width;
 	static constexpr size_t pixel_height = tile_table::height * pattern::height;
@@ -180,11 +188,11 @@ struct background_plane {
 	index_t pattern_table_index = 0;
 
 	const auto &get_name_table(size_t position) const {
-		return name_tables[position];
+		return name_tables[position % num_name_tables];
 	}
 
 	auto &get_name_table(size_t position) {
-		return name_tables[position];
+		return name_tables[position % num_name_tables];
 	}
 
 	const auto &get_name_table(size_t x, size_t y) const {
