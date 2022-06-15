@@ -4,6 +4,7 @@
 #include <vector>
 #include <span>
 #include <algorithm>
+#include <tuple>
 
 namespace expt8 {
 
@@ -55,7 +56,11 @@ struct pattern_table {
 
 	std::array<pattern, num_patterns> patterns;
 
-	const pattern &get_pattern(size_t position) const {
+	auto &get_pattern(size_t position) const {
+		return patterns[position % num_patterns];
+	}
+
+	auto &get_pattern(size_t position) {
 		return patterns[position % num_patterns];
 	}
 
@@ -64,35 +69,15 @@ struct pattern_table {
 	}
 
 	void write(size_t position, std::span<pixel_t> &&src) {
-		patterns[position % num_patterns].write(std::move(src));
+		get_pattern(position).write(std::move(src));
 	}
 };
 
 struct block {
 	static constexpr size_t width = 2;
 	static constexpr size_t height = 2;
-	static constexpr size_t num_palettes = width * height;
-	static constexpr size_t num_horizontal_tiles = 4;
-	static constexpr size_t num_vertical_tiles = 4;
 
-	std::array<index_t, num_palettes> palette_indices;
 	index_t palette_index = 0;
-
-	auto get(size_t position) const {
-		return palette_indices[position % num_palettes];
-	}
-
-	auto set(size_t position, index_t index) {
-		palette_indices[position % num_palettes] = index;
-	}
-
-	auto get(size_t x, size_t y) const {
-		return get((y % height) * width + (x % width));
-	}
-
-	auto set(size_t x, size_t y, index_t index) {
-		return set((y % height) * width + (x % width), index);
-	}
 };
 
 struct block_table {
@@ -147,10 +132,10 @@ struct name_table {
 	tile_table tile_table;
 	block_table block_table;
 
-	auto get(size_t x, size_t y, index_t &out_tile_index, index_t &out_palette_index) const {
+	std::tuple<index_t, index_t> get(size_t x, size_t y) const {
 		auto tile_x = x / pattern::width;
 		auto tile_y = y / pattern::height;
-		out_tile_index = tile_table.get(tile_x, tile_y);
+		auto tile_index = tile_table.get(tile_x, tile_y);
 
 		auto block_x = x / (block::width * pattern::width);
 		auto block_y = y / (block::height * pattern::height);
@@ -158,9 +143,9 @@ struct name_table {
 
 		auto palette_x = tile_x / block::width;
 		auto palette_y = tile_y / block::height;
-		out_palette_index = block.palette_index;// get(palette_x, palette_y);
+		auto palette_index = block.palette_index;
 
-		return true;
+		return { tile_index, palette_index };
 	}
 
 	auto set_tile(size_t x, size_t y, index_t index) {
@@ -168,7 +153,7 @@ struct name_table {
 	}
 
 	auto set_tile_palette(size_t x, size_t y, index_t index) {
-		block_table.get(x / block::width, y / block::height).palette_index = index;// set(x % block::width, y % block::height, index);
+		block_table.get(x / block::width, y / block::height).palette_index = index;
 	}
 };
 
@@ -190,7 +175,7 @@ struct background_plane {
 	std::array<palette, num_palettes> palettes;
 	index_t pattern_table_index = 0;
 
-	const auto &get_name_table(size_t position) const {
+	auto &get_name_table(size_t position) const {
 		return name_tables[position % num_name_tables];
 	}
 
@@ -198,7 +183,7 @@ struct background_plane {
 		return name_tables[position % num_name_tables];
 	}
 
-	const auto &get_name_table(size_t x, size_t y) const {
+	auto &get_name_table(size_t x, size_t y) const {
 		return get_name_table((y % height) * width + (x % width));
 	}
 
@@ -206,7 +191,7 @@ struct background_plane {
 		return get_name_table((y % height) * width + (x % width));
 	}
 
-	const auto &get_palette(size_t position) const {
+	auto &get_palette(size_t position) const {
 		return palettes[position % num_palettes];
 	}
 
@@ -215,22 +200,19 @@ struct background_plane {
 	}
 
 	void set_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
-		palettes[palette_index % palettes.size()].color(palette_color_index, new_color);
+		get_palette(palette_index).color(palette_color_index, new_color);
 	}
 
-	const auto &get(size_t x, size_t y, index_t &out_tile_index) const {
+	std::tuple<index_t, const palette *> get(size_t x, size_t y) const {
 		auto name_table_x = x / pixel_width;
 		auto name_table_y = y / pixel_height;
 		auto &name_table = get_name_table(name_table_x, name_table_y);
 
 		auto name_x = x % pixel_width;
 		auto name_y = y % pixel_height;
-		index_t tile_index = 0;
-		index_t palette_index = 0;
-		name_table.get(name_x, name_y, tile_index, palette_index);
+		auto [tile_index, palette_index] = name_table.get(name_x, name_y);
 
-		out_tile_index = tile_index;
-		return get_palette(palette_index);
+		return { tile_index, &get_palette(palette_index) };
 	}
 
 	auto set_tile(size_t name_table_index, size_t x, size_t y, index_t index) {
@@ -275,7 +257,11 @@ struct sprite_plane {
 	std::array<palette, num_palettes> palettes;
 	index_t pattern_table_index = 0;
 
-	const auto &get_sprite(size_t position) const {
+	auto &get_sprite(size_t position) const {
+		return sprites[position % sprites.size()];
+	}
+
+	auto &get_sprite(size_t position) {
 		return sprites[position % sprites.size()];
 	}
 
@@ -287,7 +273,7 @@ struct sprite_plane {
 		index_t palette_index = 0,
 		attribute_t attributes = 0
 	) {
-		auto &target = sprites[position % sprites.size()];
+		auto &target = get_sprite(position);
 		target.x = x;
 		target.y = y;
 		target.tile_index = tile_index;
@@ -295,12 +281,26 @@ struct sprite_plane {
 		target.attributes = attributes;
 	}
 
-	const auto &get_palette(size_t position) const {
+	void set_sprite_position(
+		size_t position,
+		coordinate_t x = 0,
+		coordinate_t y = 0
+	) {
+		auto &target = get_sprite(position);
+		target.x = x;
+		target.y = y;
+	}
+
+	auto &get_palette(size_t position) const {
+		return palettes[position % palettes.size()];
+	}
+
+	auto &get_palette(size_t position) {
 		return palettes[position % palettes.size()];
 	}
 
 	void set_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
-		palettes[palette_index % palettes.size()].color(palette_color_index, new_color);
+		get_palette(palette_index).color(palette_color_index, new_color);
 	}
 
 	bool find_sprites(coordinate_t x, coordinate_t y, std::vector<const sprite *> &out_front_sprites, std::vector<const sprite *> &out_back_sprites) const {
@@ -357,6 +357,14 @@ public:
 	static constexpr size_t num_pattern_tables = 2;
 
 public:
+	auto &get_pattern_table(size_t position) const {
+		return _pattern_tables[position % num_pattern_tables];
+	}
+
+	auto &get_pattern_table(size_t position) {
+		return _pattern_tables[position % num_pattern_tables];
+	}
+
 	bool render(std::span<color_t> framebuffer, size_t width, size_t height) {
 		std::vector<const sprite *> front_sprites;
 		std::vector<const sprite *> back_sprites;
@@ -379,7 +387,7 @@ public:
 					for (auto *sprite : front_sprites) {
 						if ((x < sprite->left()) || (x >= sprite->right())) continue;
 						auto palette = _sprite_plane.get_palette(sprite->palette_index);
-						auto pixel = _pattern_tables[_sprite_plane.pattern_table_index].get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
+						auto pixel = get_pattern_table(_sprite_plane.pattern_table_index).get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
 						if (pixel > 0) {
 							color = palette.color(pixel);
 							found_color = true;
@@ -389,11 +397,10 @@ public:
 				}
 
 				if (!found_color) {
-					index_t tile_index = 0;
-					auto palette = _background_plane.get(xx, yy, tile_index);
-					auto pixel = _pattern_tables[_background_plane.pattern_table_index].get_pixel(tile_index, xx, yy);
+					auto [tile_index, palette] = _background_plane.get(xx, yy);
+					auto pixel = get_pattern_table(_background_plane.pattern_table_index).get_pixel(tile_index, xx, yy);
 					if (pixel > 0) {
-						color = palette.color(pixel);
+						color = palette->color(pixel);
 						found_color = true;
 					}
 				}
@@ -402,7 +409,7 @@ public:
 					for (auto *sprite : back_sprites) {
 						if ((x < sprite->left()) || (x >= sprite->right())) continue;
 						auto palette = _sprite_plane.get_palette(sprite->palette_index);
-						auto pixel = _pattern_tables[_sprite_plane.pattern_table_index].get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
+						auto pixel = get_pattern_table(_sprite_plane.pattern_table_index).get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
 						if (pixel > 0) {
 							color = palette.color(pixel);
 							found_color = true;
@@ -411,14 +418,14 @@ public:
 					}
 				}
 
-				framebuffer[y * width + x] = color;
+				if (auto position = y * width + x; position < framebuffer.size()) framebuffer[position] = color;
 			}
 		}
 		return true;
 	}
 
 	void write_pattern(size_t pattern_table_index, size_t tile_index, std::span<pixel_t> &&src) {
-		_pattern_tables[pattern_table_index % num_pattern_tables].write(tile_index, std::move(src));
+		get_pattern_table(pattern_table_index).write(tile_index, std::move(src));
 	}
 
 	void set_sprite_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
