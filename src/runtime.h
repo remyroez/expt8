@@ -183,6 +183,9 @@ struct background_plane {
 	static constexpr size_t pixel_width = tile_table::width * pattern::width;
 	static constexpr size_t pixel_height = tile_table::height * pattern::height;
 
+	static constexpr auto full_pixel_width = pixel_width * width;
+	static constexpr auto full_pixel_height = pixel_height * height;
+
 	std::array<name_table, num_name_tables> name_tables;
 	std::array<palette, num_palettes> palettes;
 	index_t pattern_table_index = 0;
@@ -266,6 +269,7 @@ struct sprite {
 struct sprite_plane {
 	static constexpr size_t num_sprites = 64;
 	static constexpr size_t num_palettes = 4;
+	static constexpr size_t max_sprites_on_scanline = 8;
 
 	std::array<sprite, num_sprites> sprites;
 	std::array<palette, num_palettes> palettes;
@@ -304,13 +308,13 @@ struct sprite_plane {
 		for (auto &it : sprites) {
 			if (it.tile_index == 0xFF) {
 				// unused
-			} else if (x < it.x) {
+			} else if (x < it.left()) {
 				// no hit
-			} else if (y < it.y) {
+			} else if (y < it.top()) {
 				// no hit
-			} else if (x >= (it.x + pattern::width)) {
+			} else if (x >= it.right()) {
 				// no hit
-			} else if (y >= (it.y + pattern::height)) {
+			} else if (y >= it.bottom()) {
 				// no hit
 			} else {
 				if (it.has_attribute(sprite::priority_back)) {
@@ -319,6 +323,7 @@ struct sprite_plane {
 					out_front_sprites.push_back(&it);
 				}
 				found = true;
+				if ((out_back_sprites.size() + out_front_sprites.size()) >= max_sprites_on_scanline) break;
 			}
 		}
 		return found;
@@ -329,9 +334,9 @@ struct sprite_plane {
 		for (auto &it : sprites) {
 			if (it.tile_index == 0xFF) {
 				// unused
-			} else if (y < it.y) {
+			} else if (y < it.top()) {
 				// no hit
-			} else if (y >= (it.y + pattern::height)) {
+			} else if (y >= it.bottom()) {
 				// no hit
 			} else {
 				if (it.has_attribute(sprite::priority_back)) {
@@ -340,6 +345,7 @@ struct sprite_plane {
 					out_front_sprites.push_back(&it);
 				}
 				found = true;
+				if ((out_back_sprites.size() + out_front_sprites.size()) >= max_sprites_on_scanline) break;
 			}
 		}
 		return found;
@@ -352,26 +358,26 @@ public:
 
 public:
 	bool render(std::span<color_t> framebuffer, size_t width, size_t height) {
-		constexpr auto pixel_width = static_cast<int>(background_plane::pixel_width * background_plane::width);
-		constexpr auto pixel_height = static_cast<int>(background_plane::pixel_height * background_plane::height);
 		std::vector<const sprite *> front_sprites;
 		std::vector<const sprite *> back_sprites;
+
 		for (int y = 0; y < height; ++y) {
+			front_sprites.clear();
+			back_sprites.clear();
+			_sprite_plane.find_sprites(y, front_sprites, back_sprites);
+
 			for (int x = 0; x < width; ++x) {
-				auto xx = x + (scroll_x % pixel_width);
-				auto yy = y + (scroll_y % pixel_height);
-				if (xx < 0) xx += pixel_width;
-				if (yy < 0) yy += pixel_height;
+				auto xx = x + (scroll_x % static_cast<int>(background_plane::full_pixel_width));
+				auto yy = y + (scroll_y % static_cast<int>(background_plane::full_pixel_height));
+				if (xx < 0) xx += static_cast<int>(background_plane::full_pixel_width);
+				if (yy < 0) yy += static_cast<int>(background_plane::full_pixel_height);
 
 				auto color = _background_color;
 				bool found_color = false;
 
-				front_sprites.clear();
-				back_sprites.clear();
-				_sprite_plane.find_sprites(x, y, front_sprites, back_sprites);
-
 				if (front_sprites.size() > 0) {
 					for (auto *sprite : front_sprites) {
+						if ((x < sprite->left()) || (x >= sprite->right())) continue;
 						auto palette = _sprite_plane.get_palette(sprite->palette_index);
 						auto pixel = _pattern_tables[_sprite_plane.pattern_table_index].get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
 						if (pixel > 0) {
@@ -394,6 +400,7 @@ public:
 
 				if (!found_color && (back_sprites.size() > 0)) {
 					for (auto *sprite : back_sprites) {
+						if ((x < sprite->left()) || (x >= sprite->right())) continue;
 						auto palette = _sprite_plane.get_palette(sprite->palette_index);
 						auto pixel = _pattern_tables[_sprite_plane.pattern_table_index].get_pixel(sprite->tile_index, x - sprite->x, y - sprite->y);
 						if (pixel > 0) {
