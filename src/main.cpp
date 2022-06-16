@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <array>
 #include <random>
+#include <cmath>
+#include <numbers>
 
 #include <SDL.h>
 
@@ -468,6 +470,21 @@ int main(int argc, char **argv) {
 
 		bool grayscale = false;
 		bool fullscreen = false;
+		int raster = 0;
+
+		runtime.ppu().set_callback(
+			[&](int x, int y) {
+				if (y < 32) {
+					runtime.set_scroll(0, 0);
+
+				} else {
+					auto base = (y + raster) % logical_height;
+					auto s = std::sin(std::numbers::pi * 2 * (static_cast<double>(base) / static_cast<double>(logical_height - 1))) ;
+					runtime.set_scroll(s * 32, 0);
+				}
+			},
+			expt8::picture_processing_unit::hblank
+		);
 
 		std::random_device rd;
 		std::mt19937 mt(rd());
@@ -551,7 +568,8 @@ int main(int argc, char **argv) {
 				if (::input_state & ::input_left) scroll_x -= 1;
 				if (::input_state & ::input_down) scroll_y += 1;
 				if (::input_state & ::input_up) scroll_y -= 1;
-				runtime.set_scroll(scroll_x, scroll_y);
+				//runtime.set_scroll(scroll_x, scroll_y);
+				raster = (raster + 1) % logical_height;
 
 				for (int i = 0; i < entities.size(); ++i) {
 					auto &spr_x = entities[i].spr_x;

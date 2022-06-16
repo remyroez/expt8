@@ -5,6 +5,7 @@
 #include <span>
 #include <algorithm>
 #include <tuple>
+#include <functional>
 
 namespace expt8 {
 
@@ -352,9 +353,19 @@ struct sprite_plane {
 	}
 };
 
-class ppu {
+class picture_processing_unit {
 public:
 	static constexpr size_t num_pattern_tables = 2;
+
+	using callback = std::function<void(int, int)>;
+
+	enum attribute {
+		_vblank,
+		_hblank,
+
+		vblank = 1 << _vblank,
+		hblank = 1 << _hblank,
+	};
 
 public:
 	auto &get_pattern_table(size_t position) const {
@@ -370,6 +381,14 @@ public:
 		std::vector<const sprite *> back_sprites;
 
 		for (int y = 0; y < height; ++y) {
+			{
+				bool update = ((_attribute & hblank) != 0);
+				if (y == 0) {
+					update = update || ((_attribute & vblank) != 0);
+				}
+				if (update) invoke_callback(0, y);
+			}
+
 			front_sprites.clear();
 			back_sprites.clear();
 			_sprite_plane.find_sprites(y, front_sprites, back_sprites);
@@ -484,6 +503,10 @@ public:
 		scroll_y = y;
 	}
 
+	void set_callback(const callback &fn, attribute_t attr) { _callback = fn; _attribute = attr; }
+
+	void invoke_callback(int x, int y) { if (_callback) _callback(x, y); }
+
 private:
 	sprite_plane _sprite_plane{};
 	background_plane _background_plane{};
@@ -492,6 +515,9 @@ private:
 
 	coordinate_t scroll_x = 0;
 	coordinate_t scroll_y = 0;
+
+	callback _callback;
+	attribute_t _attribute = 0;
 };
 
 class runtime {
@@ -523,8 +549,11 @@ public:
 #undef INSTALL_PPU_FN
 #undef INSTALL_PPU_FN_EX
 
+	auto &ppu() const { return _ppu; }
+	auto &ppu() { return _ppu; }
+
 private:
-	ppu _ppu;
+	picture_processing_unit _ppu;
 };
 
 } // namespace expt8
