@@ -30,6 +30,9 @@ struct palette {
 
 	auto color(size_t index) const { return colors[index % num_colors]; }
 	void color(size_t index, color_t new_color) { colors[index % num_colors] = new_color; }
+	void color(std::span<color_t> src) {
+		std::copy(src.begin(), src.end(), colors.begin());
+	}
 };
 
 struct pattern {
@@ -69,8 +72,27 @@ struct pattern_table {
 		return get_pattern(position).pixel(x, y);
 	}
 
-	void write(size_t position, std::span<pixel_t> &&src) {
-		get_pattern(position).write(std::move(src));
+	void write(size_t position, std::span<pixel_t> src) {
+		if (src.size() > pattern::num_pixels) {
+			auto num = src.size() / pattern::num_pixels;
+			auto last = (num - 1);
+			auto fraction = src.size() % pattern::num_pixels;
+			for (size_t i = 0; i < num; ++i) {
+				auto offset = i * pattern::num_pixels;
+				auto size = pattern::num_pixels;
+				if (i == last && fraction > 0) {
+					size = fraction;
+				}
+				get_pattern(position + i).write(std::span{ &src[offset], size});
+			}
+
+		} else {
+			get_pattern(position).write(src);
+		}
+	}
+
+	void write(std::span<pixel_t> &&src) {
+		write(0, std::move(src));
 	}
 };
 
@@ -204,6 +226,23 @@ struct background_plane {
 		get_palette(palette_index).color(palette_color_index, new_color);
 	}
 
+	void set_palette(size_t palette_index, std::span<color_t> src) {
+		get_palette(palette_index).color(src);
+	}
+
+	void set_palette(std::span<color_t> src, size_t palette_index_offset = 0) {
+		auto num = src.size() / palette::num_colors;
+		auto last = num - 1;
+		auto fraction = src.size() % palette::num_colors;
+		for (size_t i = 0; i < num; ++i) {
+			auto size = palette::num_colors;
+			if (i == last && fraction > 0) {
+				size = fraction;
+			}
+			get_palette(palette_index_offset + i).color(std::span{ &src[i * palette::num_colors], size});
+		}
+	}
+
 	std::tuple<index_t, const palette *> get(size_t x, size_t y) const {
 		auto name_table_x = x / pixel_width;
 		auto name_table_y = y / pixel_height;
@@ -304,6 +343,23 @@ struct sprite_plane {
 		get_palette(palette_index).color(palette_color_index, new_color);
 	}
 
+	void set_palette(size_t palette_index, std::span<color_t> src) {
+		get_palette(palette_index).color(src);
+	}
+
+	void set_palette(std::span<color_t> src, size_t palette_index_offset = 0) {
+		auto num = src.size() / palette::num_colors;
+		auto last = num - 1;
+		auto fraction = src.size() % palette::num_colors;
+		for (size_t i = 0; i < num; ++i) {
+			auto size = palette::num_colors;
+			if (i == last && fraction > 0) {
+				size = fraction;
+			}
+			get_palette(palette_index_offset + i).color(std::span{ &src[i * palette::num_colors], size });
+		}
+	}
+	
 	bool find_sprites(coordinate_t x, coordinate_t y, std::vector<const sprite *> &out_front_sprites, std::vector<const sprite *> &out_back_sprites) const {
 		bool found = false;
 		for (auto &it : sprites) {
@@ -456,6 +512,10 @@ public:
 		get_pattern_table(pattern_table_index).write(tile_index, std::move(src));
 	}
 
+	void write_pattern(size_t pattern_table_index, std::span<pixel_t> &&src) {
+		get_pattern_table(pattern_table_index).write(std::move(src));
+	}
+
 	void set_sprite_palette(size_t palette_index, size_t palette_color_index, color_t new_color) {
 		_sprite_plane.set_palette(palette_index, palette_color_index, new_color);
 	}
@@ -465,6 +525,18 @@ public:
 		_sprite_plane.set_palette(palette_index, 1, new_color2);
 		_sprite_plane.set_palette(palette_index, 2, new_color3);
 		_sprite_plane.set_palette(palette_index, 3, new_color4);
+	}
+
+	void set_sprite_palette(size_t palette_index, color_t new_color2, color_t new_color3, color_t new_color4) {
+		set_sprite_palette(palette_index, 0, new_color2, new_color3, new_color4);
+	}
+
+	void set_sprite_palette(size_t palette_index, std::span<color_t> &&src) {
+		_sprite_plane.set_palette(palette_index, std::move(src));
+	}
+
+	void set_sprite_palette(std::span<color_t> &&src, size_t palette_index_offset = 0) {
+		_sprite_plane.set_palette(std::move(src), palette_index_offset);
 	}
 
 	void set_sprite_pattern_table(index_t index) {
@@ -480,6 +552,18 @@ public:
 		_background_plane.set_palette(palette_index, 1, new_color2);
 		_background_plane.set_palette(palette_index, 2, new_color3);
 		_background_plane.set_palette(palette_index, 3, new_color4);
+	}
+
+	void set_background_palette(size_t palette_index, color_t new_color2, color_t new_color3, color_t new_color4) {
+		set_background_palette(palette_index, 0, new_color2, new_color3, new_color4);
+	}
+
+	void set_background_palette(size_t palette_index, std::span<color_t> src) {
+		_background_plane.set_palette(palette_index, src);
+	}
+
+	void set_background_palette(std::span<color_t> &&src, size_t palette_index_offset = 0) {
+		_background_plane.set_palette(std::move(src), palette_index_offset);
 	}
 
 	void set_background_pattern_table(index_t index) {
@@ -512,7 +596,7 @@ public:
 		scroll_y = y;
 	}
 
-	void set_callback(const callback &fn, attribute_t attr) { _callback = fn; _attribute = attr; }
+	void set_callback(const callback &fn, attribute_t attr = vblank) { _callback = fn; _attribute = attr; }
 
 	void invoke_callback(int x, int y) { if (_callback) _callback(x, y); }
 

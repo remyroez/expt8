@@ -333,11 +333,7 @@ int main(int argc, char **argv) {
 				1, 2, 3, 3, 3, 3, 2, 1,
 				1, 2, 2, 2, 2, 2, 2, 1,
 				1, 1, 1, 1, 1, 1, 1, 1,
-			};
-			runtime.write_pattern(0, 0, tile);
-		}
-		{
-			expt8::pixel_t tile[] = {
+
 				1, 1, 1, 1, 1, 1, 1, 1,
 				2, 2, 2, 2, 2, 2, 2, 2,
 				3, 3, 3, 3, 3, 3, 3, 3,
@@ -346,11 +342,7 @@ int main(int argc, char **argv) {
 				3, 3, 3, 3, 3, 3, 3, 3,
 				2, 2, 2, 2, 2, 2, 2, 2,
 				1, 1, 1, 1, 1, 1, 1, 1,
-			};
-			runtime.write_pattern(0, 1, tile);
-		}
-		{
-			expt8::pixel_t tile[] = {
+
 				1, 3, 3, 3, 3, 3, 3, 2,
 				3, 1, 0, 0, 0, 0, 2, 3,
 				3, 0, 1, 0, 0, 2, 0, 3,
@@ -359,11 +351,7 @@ int main(int argc, char **argv) {
 				3, 0, 2, 0, 0, 1, 0, 3,
 				3, 2, 0, 0, 0, 0, 1, 3,
 				2, 3, 3, 3, 3, 3, 3, 1,
-			};
-			runtime.write_pattern(0, 2, tile);
-		}
-		{
-			expt8::pixel_t tile[] = {
+
 				3, 0, 1, 1, 1, 1, 0, 3,
 				0, 1, 0, 0, 0, 0, 1, 0,
 				1, 0, 2, 2, 2, 2, 0, 1,
@@ -373,11 +361,16 @@ int main(int argc, char **argv) {
 				0, 1, 0, 0, 0, 0, 1, 0,
 				3, 0, 1, 1, 1, 1, 0, 3,
 			};
-			runtime.write_pattern(0, 3, tile);
+			runtime.write_pattern(0, tile);
 		}
 		{
-			runtime.set_background_palette(0, 0x00, 0x0F, 0x21, 0x26);
-			runtime.set_background_palette(1, 0x00, 0x29, 0x13, 0x0F);
+#if 0
+			runtime.set_background_palette(0, 0x0F, 0x21, 0x26);
+			runtime.set_background_palette(1, 0x29, 0x13, 0x0F);
+#else
+			expt8::color_t pal[] = { 0, 0x0F, 0x21, 0x26, 0, 0x29, 0x23, 0x0F };
+			runtime.set_background_palette(pal);
+#endif
 		}
 		{
 			int p = 0;
@@ -416,8 +409,18 @@ int main(int argc, char **argv) {
 				0, 2, 2, 2, 2, 2, 2, 0,
 				0, 0, 2, 2, 2, 2, 0, 0,
 				0, 0, 0, 2, 2, 0, 0, 0,
+#if 1
+				1, 1, 1, 3, 3, 1, 1, 1,
+				0, 0, 0, 1, 1, 0, 0, 0,
+				0, 0, 1, 1, 1, 1, 0, 0,
+				0, 1, 1, 1, 1, 1, 1, 0,
+				0, 2, 2, 2, 2, 2, 2, 0,
+				0, 0, 2, 2, 2, 2, 0, 0,
+				0, 0, 0, 2, 2, 0, 0, 0,
+				2, 2, 2, 3, 3, 2, 2, 2,
+#endif
 			};
-			runtime.write_pattern(1, 0, tile);
+			runtime.write_pattern(1, tile);
 			runtime.set_sprite_pattern_table(1);
 			runtime.set_sprite(
 				0,
@@ -483,7 +486,7 @@ int main(int argc, char **argv) {
 					runtime.set_scroll(s * 32, 0);
 				}
 			},
-			expt8::picture_processing_unit::always
+			0//expt8::picture_processing_unit::always
 		);
 
 		std::random_device rd;
@@ -568,7 +571,7 @@ int main(int argc, char **argv) {
 				if (::input_state & ::input_left) scroll_x -= 1;
 				if (::input_state & ::input_down) scroll_y += 1;
 				if (::input_state & ::input_up) scroll_y -= 1;
-				//runtime.set_scroll(scroll_x, scroll_y);
+				runtime.set_scroll(scroll_x, scroll_y);
 				raster = (raster + 1) % logical_height;
 
 				for (int i = 0; i < entities.size(); ++i) {
@@ -597,7 +600,7 @@ int main(int argc, char **argv) {
 					runtime.set_sprite(
 						i,
 						spr_x, spr_y,
-						0,
+						1,
 						0,
 						(i >= 32) ? expt8::sprite::priority_back : 0
 					);
