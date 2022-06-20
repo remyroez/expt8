@@ -362,9 +362,11 @@ public:
 	enum attribute {
 		_vblank,
 		_hblank,
+		_always,
 
 		vblank = 1 << _vblank,
 		hblank = 1 << _hblank,
+		always = 1 << _always,
 	};
 
 public:
@@ -381,19 +383,26 @@ public:
 		std::vector<const sprite *> back_sprites;
 
 		for (int y = 0; y < height; ++y) {
-			{
-				bool update = ((_attribute & hblank) != 0);
+			if (!update_timing(always)) {
+				bool update = update_timing(hblank);
 				if (y == 0) {
-					update = update || ((_attribute & vblank) != 0);
+					update = update || update_timing(vblank);
 				}
 				if (update) invoke_callback(0, y);
+
+				front_sprites.clear();
+				back_sprites.clear();
+				_sprite_plane.find_sprites(y, front_sprites, back_sprites);
 			}
 
-			front_sprites.clear();
-			back_sprites.clear();
-			_sprite_plane.find_sprites(y, front_sprites, back_sprites);
-
 			for (int x = 0; x < width; ++x) {
+				if (update_timing(always)) {
+					invoke_callback(x, y);
+
+					front_sprites.clear();
+					back_sprites.clear();
+					_sprite_plane.find_sprites(x, y, front_sprites, back_sprites);
+				}
 				auto xx = x + (scroll_x % static_cast<int>(background_plane::full_pixel_width));
 				auto yy = y + (scroll_y % static_cast<int>(background_plane::full_pixel_height));
 				if (xx < 0) xx += static_cast<int>(background_plane::full_pixel_width);
@@ -506,6 +515,8 @@ public:
 	void set_callback(const callback &fn, attribute_t attr) { _callback = fn; _attribute = attr; }
 
 	void invoke_callback(int x, int y) { if (_callback) _callback(x, y); }
+
+	bool update_timing(attribute_t attr) { return (_attribute & attr) != 0; }
 
 private:
 	sprite_plane _sprite_plane{};

@@ -474,7 +474,7 @@ int main(int argc, char **argv) {
 
 		runtime.ppu().set_callback(
 			[&](int x, int y) {
-				if (y < 32) {
+				if (y < 32 || x < logical_width / 2) {
 					runtime.set_scroll(0, 0);
 
 				} else {
@@ -483,7 +483,7 @@ int main(int argc, char **argv) {
 					runtime.set_scroll(s * 32, 0);
 				}
 			},
-			expt8::picture_processing_unit::hblank
+			expt8::picture_processing_unit::always
 		);
 
 		std::random_device rd;
