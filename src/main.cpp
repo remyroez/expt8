@@ -7,11 +7,17 @@
 #include <algorithm>
 #include <string_view>
 #include <filesystem>
+#include <array>
+#include <random>
+#include <cmath>
+#include <numbers>
 
 #include <SDL.h>
 
 #include <wasm3.h>
 #include <m3_env.h>
+
+#include "runtime.h"
 
 #define EXPT8_WASM (0)
 
@@ -22,9 +28,11 @@ constexpr int logical_height = 240;
 constexpr int default_scale = 2;
 constexpr int default_width = (logical_width * default_scale);
 constexpr int default_height = (logical_height * default_scale);
-constexpr Uint32 fps = 60;
-constexpr Uint32 ms_frame = (1000U / fps);
+constexpr Uint64 fps = 60;
+constexpr Uint64 ms_frame = (1000LLU / fps);
 constexpr uint32_t memory_size = (1024 * 64) * 2;
+
+using framebuffer = std::array<expt8::pixel_t, logical_width * logical_height>;
 
 constexpr uint8_t input_right = 0b00000001;
 constexpr uint8_t input_left = 0b00000010;
@@ -309,23 +317,220 @@ int main(int argc, char **argv) {
 			KeyboardState.resize(Num);
 		}
 
+		expt8::runtime runtime;
+
+		// dummy bg color
+		runtime.set_background_color(0x00);
+
+		// dummy bg
+		{
+			expt8::pixel_t tile[] = {
+				1, 1, 1, 1, 1, 1, 1, 1,
+				1, 2, 2, 2, 2, 2, 2, 1,
+				1, 2, 3, 3, 3, 3, 2, 1,
+				1, 2, 3, 0, 0, 3, 2, 1,
+				1, 2, 3, 0, 0, 3, 2, 1,
+				1, 2, 3, 3, 3, 3, 2, 1,
+				1, 2, 2, 2, 2, 2, 2, 1,
+				1, 1, 1, 1, 1, 1, 1, 1,
+
+				1, 1, 1, 1, 1, 1, 1, 1,
+				2, 2, 2, 2, 2, 2, 2, 2,
+				3, 3, 3, 3, 3, 3, 3, 3,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				3, 3, 3, 3, 3, 3, 3, 3,
+				2, 2, 2, 2, 2, 2, 2, 2,
+				1, 1, 1, 1, 1, 1, 1, 1,
+
+				1, 3, 3, 3, 3, 3, 3, 2,
+				3, 1, 0, 0, 0, 0, 2, 3,
+				3, 0, 1, 0, 0, 2, 0, 3,
+				3, 0, 0, 1, 2, 0, 0, 3,
+				3, 0, 0, 2, 1, 0, 0, 3,
+				3, 0, 2, 0, 0, 1, 0, 3,
+				3, 2, 0, 0, 0, 0, 1, 3,
+				2, 3, 3, 3, 3, 3, 3, 1,
+
+				3, 0, 1, 1, 1, 1, 0, 3,
+				0, 1, 0, 0, 0, 0, 1, 0,
+				1, 0, 2, 2, 2, 2, 0, 1,
+				1, 0, 2, 0, 0, 2, 0, 1,
+				1, 0, 2, 0, 0, 2, 0, 1,
+				1, 0, 2, 2, 2, 2, 0, 1,
+				0, 1, 0, 0, 0, 0, 1, 0,
+				3, 0, 1, 1, 1, 1, 0, 3,
+			};
+			runtime.write_pattern(0, tile);
+		}
+		{
+#if 0
+			runtime.set_background_palette(0, 0x0F, 0x21, 0x26);
+			runtime.set_background_palette(1, 0x29, 0x13, 0x0F);
+#else
+			expt8::color_t pal[] = { 0, 0x0F, 0x21, 0x26, 0, 0x29, 0x23, 0x0F };
+			runtime.set_background_palette(pal);
+#endif
+		}
+		{
+			int p = 0;
+			for (int y = 0; y < expt8::tile_table::height; ++y) {
+				for (int x = 0; x < expt8::tile_table::width; ++x) {
+					runtime.set_tile(0, x, y, x % 2);
+					if ((x % 2 == 0) && (y % 2 == 0)) runtime.set_tile_palette(0, x, y, p++ % 2);
+				}
+			}
+		}
+		{
+			int p = 0;
+			for (int y = 0; y < expt8::tile_table::height; ++y) {
+				for (int x = 0; x < expt8::tile_table::width; ++x) {
+					runtime.set_tile(1, x, y, (x == 0 || x == (expt8::tile_table::width - 1) || y == 0 || y == (expt8::tile_table::height - 1)) ? 2 : 0);
+				}
+			}
+		}
+		{
+			int p = 0;
+			for (int y = 0; y < expt8::tile_table::height; ++y) {
+				for (int x = 0; x < expt8::tile_table::width; ++x) {
+					runtime.set_tile(2, x, y, (x == 0 || x == (expt8::tile_table::width - 1) || y == 0 || y == (expt8::tile_table::height - 1)) ? 3 : 0);
+				}
+			}
+		}
+
+		// dummy sprite
+		{
+			expt8::pixel_t tile[] = {
+				0, 0, 0, 1, 1, 0, 0, 0,
+				0, 0, 1, 1, 1, 1, 0, 0,
+				0, 1, 1, 1, 1, 1, 1, 0,
+				1, 1, 1, 3, 3, 1, 1, 1,
+				2, 2, 2, 3, 3, 2, 2, 2,
+				0, 2, 2, 2, 2, 2, 2, 0,
+				0, 0, 2, 2, 2, 2, 0, 0,
+				0, 0, 0, 2, 2, 0, 0, 0,
+#if 1
+				1, 1, 1, 3, 3, 1, 1, 1,
+				0, 0, 0, 1, 1, 0, 0, 0,
+				0, 0, 1, 1, 1, 1, 0, 0,
+				0, 1, 1, 1, 1, 1, 1, 0,
+				0, 2, 2, 2, 2, 2, 2, 0,
+				0, 0, 2, 2, 2, 2, 0, 0,
+				0, 0, 0, 2, 2, 0, 0, 0,
+				2, 2, 2, 3, 3, 2, 2, 2,
+#endif
+			};
+			runtime.write_pattern(1, tile);
+			runtime.set_sprite_pattern_table(1);
+			runtime.set_sprite(
+				0,
+				0, 0,
+				0,
+				0
+			);
+			runtime.set_sprite_palette(0, 0x00, 0x15, 0x29, 0x30);
+		}
+
+		framebuffer fb{ 0 };
+		std::array<Uint32, 256> palette{ 0 };
+
+		// dummy framebuffer
+		{
+			for (int y = 0; y < logical_height; ++y) {
+				for (int x = 0; x < logical_width; ++x) {
+					fb[y * logical_width + x] = x / 16 + y / 16 * 16;
+				}
+			}
+		}
+
+		// palette
+		{
+			constexpr Uint32 rgb_colors[] = {
+				0x757575, 0x271B8F, 0x0000AB, 0x47009F, 0x8F0077, 0xAB0013, 0xA70000, 0x7F0B00,
+				0x432F00, 0x004700, 0x005100, 0x003F17, 0x1B3F5F, 0x000000, 0x000000, 0x000000,
+
+				0xBCBCBC, 0x0073EF, 0x233BEF, 0x8300F3, 0xBF00BF, 0xE7005B, 0xDB2B00, 0xCB4F0F,
+				0x8B7300, 0x009700, 0x00AB00, 0x00933B, 0x00838B, 0x000000, 0x000000, 0x000000,
+
+				0xFFFFFF, 0x3FBFFF, 0x5F73FF, 0xA78BFD, 0xF77BFF, 0xFF77B7, 0xFF7763, 0xFF9B3B,
+				0xF3BF3F, 0x83D313, 0x4FDF4B, 0x58F898, 0x00EBDB, 0x757575, 0x000000, 0x000000,
+
+				0xFFFFFF, 0xABE7FF, 0xC7D7FF, 0xD7CBFF, 0xFFC7FF, 0xFFC7DB, 0xFFBFB3, 0xFFDBAB,
+				0xFFE7A3, 0xE3FFA3, 0xABF3BF, 0xB3FFCF, 0x9FFFF3, 0xBCBCBC, 0x000000, 0x000000,
+			};
+			constexpr size_t num_colors = sizeof(rgb_colors) / sizeof(rgb_colors[0]);
+
+			auto *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+			auto pal = std::span{ palette.data(), num_colors };
+
+			for (int i = 0; i < pal.size(); ++i) {
+				auto color = rgb_colors[i];
+				pal[i] = SDL_MapRGB(format, (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF);
+			}
+		}
+
+		auto *screen = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, logical_width, logical_height);
+
+		bool grayscale = false;
+		bool fullscreen = false;
+		int raster = 0;
+
+		runtime.ppu().set_callback(
+			[&](int x, int y) {
+				if (y < 32 || x < logical_width / 2) {
+					runtime.set_scroll(0, 0);
+
+				} else {
+					auto base = (y + raster) % logical_height;
+					auto s = std::sin(std::numbers::pi * 2 * (static_cast<double>(base) / static_cast<double>(logical_height - 1))) ;
+					runtime.set_scroll(s * 32, 0);
+				}
+			},
+			0//expt8::picture_processing_unit::always
+		);
+
+		std::random_device rd;
+		std::mt19937 mt(rd());
+		std::uniform_int_distribution<> distw(0, logical_width - expt8::pattern::width);
+		std::uniform_int_distribution<> disth(0, logical_height - expt8::pattern::height);
+		std::uniform_int_distribution<> disti(0, 1);
+
+		struct entity {
+			int spr_x = 0, spr_y = 0;
+			int vel_x = 1, vel_y = 1;
+		};
+		std::array<entity, 64> entities;
+		for (int i = 0; i < entities.size(); ++i) {
+			entities[i].spr_x = distw(mt);
+			entities[i].spr_y = disth(mt);
+			entities[i].vel_x = disti(mt) == 0 ? -1 : 1;
+			entities[i].vel_y = disti(mt) == 0 ? -1 : 1;
+		}
+		expt8::coordinate_t scroll_x = 0;
+		expt8::coordinate_t scroll_y = 0;
+
+		const auto unit = SDL_GetPerformanceFrequency() / ::fps;
+		auto before_ticks = SDL_GetPerformanceCounter();
+		Uint64 lag = 0;
+		int max_skip = 2;
+
 		bool running = true;
 		while (running) {
-			auto initial_ms = SDL_GetTicks();
-			bool press = false;
+			auto current_ticks = SDL_GetPerformanceCounter();
+			auto elapsed_ticks = current_ticks - before_ticks;
+			before_ticks = current_ticks;
+			lag += elapsed_ticks;
+
 			SDL_Event event{};
 			while (SDL_PollEvent(&event) != 0) {
 				if (event.type == SDL_QUIT) {
 					running = false;
 
 				} else if (event.type == SDL_WINDOWEVENT) {
-					if ((event.window.type == SDL_WINDOWEVENT_CLOSE) && (event.window.windowID == SDL_GetWindowID(window))) {
+					if (event.window.windowID != SDL_GetWindowID(window)) {
+						//
+					} else if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
 						running = false;
-					}
-
-				} else if (event.type == SDL_KEYDOWN) {
-					if ((event.key.state == SDL_PRESSED) && (event.key.windowID == SDL_GetWindowID(window)) && (event.key.repeat == 0)) {
-						press = true;
 					}
 				}
 			}
@@ -339,6 +544,16 @@ int main(int argc, char **argv) {
 			}
 #endif
 
+			if (!KeyboardState[SDL_SCANCODE_F11] && CurrentKeyboardState[SDL_SCANCODE_F11]) {
+				if (fullscreen) {
+					SDL_SetWindowFullscreen(window, 0);
+
+				} else {
+					SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+				}
+				fullscreen = !fullscreen;
+			}
+
 			::input_state = 0;
 			if (CurrentKeyboardState[SDL_SCANCODE_RIGHT]) ::input_state |= input_right;
 			if (CurrentKeyboardState[SDL_SCANCODE_LEFT])  ::input_state |= input_left;
@@ -348,15 +563,105 @@ int main(int argc, char **argv) {
 			if (CurrentKeyboardState[SDL_SCANCODE_X]) ::input_state |= input_b;
 			if (CurrentKeyboardState[SDL_SCANCODE_RETURN]) ::input_state |= input_start;
 			if (CurrentKeyboardState[SDL_SCANCODE_SPACE]) ::input_state |= input_select;
+			
+			int count = 0;
+			bool skip = (lag / unit) > 1;
+			while (lag >= unit) {
+				if (::input_state & ::input_right) scroll_x += 1;
+				if (::input_state & ::input_left) scroll_x -= 1;
+				if (::input_state & ::input_down) scroll_y += 1;
+				if (::input_state & ::input_up) scroll_y -= 1;
+				runtime.set_scroll(scroll_x, scroll_y);
+				raster = (raster + 1) % logical_height;
 
-			SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0);
+				for (int i = 0; i < entities.size(); ++i) {
+					auto &spr_x = entities[i].spr_x;
+					auto &spr_y = entities[i].spr_y;
+					auto &vel_x = entities[i].vel_x;
+					auto &vel_y = entities[i].vel_y;
+					spr_x += vel_x;
+					spr_y += vel_y;
+					if (spr_x < 0) {
+						spr_x = 0;
+						vel_x = -vel_x;
+
+					} else if ((spr_x + expt8::pattern::width) >= logical_width) {
+						spr_x = logical_width - expt8::pattern::width;
+						vel_x = -vel_x;
+					}
+					if (spr_y < 0) {
+						spr_y = 0;
+						vel_y = -vel_y;
+
+					} else if ((spr_y + expt8::pattern::height) >= logical_height) {
+						spr_y = logical_height - expt8::pattern::height;
+						vel_y = -vel_y;
+					}
+					runtime.set_sprite(
+						i,
+						spr_x, spr_y,
+						1,
+						0,
+						(i >= 32) ? expt8::sprite::priority_back : 0
+					);
+				}
+
+				runtime.render_picture(std::span{ fb }, logical_width, logical_height);
+				lag -= unit;
+
+				count++;
+				if (count > max_skip) {
+					lag = 0;
+					break;
+				}
+
+				if (skip) {
+					while (SDL_PollEvent(&event) != 0) {
+						if (event.type == SDL_QUIT) {
+							running = false;
+
+						} else if (event.type == SDL_WINDOWEVENT) {
+							if (event.window.windowID != SDL_GetWindowID(window)) {
+								//
+							} else if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+								running = false;
+							}
+						}
+					}
+					SDL_Delay(1);
+				}
+			}
+
+			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 			SDL_RenderClear(renderer);
 
+#if 0
 			{
 				SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 				SDL_Rect rect{ 0, 0, logical_width, logical_height };
 				SDL_RenderFillRect(renderer, &rect);
 			}
+#else
+
+			{
+				auto *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+				void *pixels = nullptr;
+				int pitch = 0;
+				if (SDL_LockTexture(screen, nullptr, &pixels, &pitch) >= 0) {
+					for (int y = 0; y < logical_height; ++y) {
+						auto *dst = (Uint32 *)((Uint8 *)pixels + y * pitch);
+						for (int x = 0; x < logical_width; ++x) {
+							auto index_color = fb[y * logical_width + x];
+							//if (grayscale && ((index_color & 0x0F) <= 0x0C)) index_color = index_color & ~0x0F;
+							dst[x] = palette[index_color];
+						}
+					}
+					SDL_UnlockTexture(screen);
+				}
+				SDL_RenderCopy(renderer, screen, nullptr, nullptr);
+			}
+#endif
+
 #if EXPT8_WASM
 			if (update) {
 				m3_CallV(update);
@@ -366,11 +671,10 @@ int main(int argc, char **argv) {
 #endif
 			SDL_RenderPresent(renderer);
 
+#if 1//EXPT8_WASM
 			std::copy(CurrentKeyboardState, &CurrentKeyboardState[SDL_NUM_SCANCODES], KeyboardState.begin());
-			::input_state_last = ::input_state;
-
-			auto elapsed_ms = (SDL_GetTicks() - initial_ms);
-			if (elapsed_ms < ms_frame) SDL_Delay(ms_frame - elapsed_ms);
+#endif
+			SDL_Delay(1);
 		}
 
 		SDL_DestroyRenderer(renderer);
